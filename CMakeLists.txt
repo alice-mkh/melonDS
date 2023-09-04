@@ -106,3 +106,9 @@ add_subdirectory(src)
 if (BUILD_QT_SDL)
     add_subdirectory(src/frontend/qt_sdl)
 endif()
+
+option(BUILD_HIGHSCORE "Build Highscore core" OFF)
+
+if (BUILD_HIGHSCORE)
+    add_subdirectory(src/frontend/highscore)
+endif()
