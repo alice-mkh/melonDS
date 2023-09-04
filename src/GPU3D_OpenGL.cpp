@@ -1297,8 +1297,10 @@ void GLRenderer::PrepareCaptureFrame()
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glBlitFramebuffer(0, 0, ScreenW, ScreenH, 0, 0, 256, 192, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
+    u8 data[256 * 192 * 4];
+
     glBindFramebuffer(GL_READ_FRAMEBUFFER, FramebufferID[3]);
-    glReadPixels(0, 0, 256, 192, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+    glReadPixels(0, 0, 256, 192, GL_BGRA, GL_UNSIGNED_BYTE, data);
 }
 
 u32* GLRenderer::GetLine(int line)
