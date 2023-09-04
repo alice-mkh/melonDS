@@ -96,13 +96,23 @@ gl_init (melonDSCore *self)
   glUseProgram (pid);
   glUniform1i (glGetUniformLocation (pid, "ScreenTex"), 0);
 
+  const int padded_height = SCREEN_HEIGHT * 2 + 2;
+  const float pad_pixels = 1.f / padded_height;
+
   const float vertices[] = {
     0.f,   0.f,    0.f, 0.f,
+    0.f,   192.f,  0.f, 0.5f - pad_pixels,
+    256.f, 192.f,  1.f, 0.5f - pad_pixels,
+    0.f,   0.f,    0.f, 0.f,
+    256.f, 192.f,  1.f, 0.5f - pad_pixels,
+    256.f, 0.f,    1.f, 0.f,
+
+    0.f,   192.f,  0.f, 0.5f + pad_pixels,
     0.f,   384.f,  0.f, 1.f,
     256.f, 384.f,  1.f, 1.f,
-    0.f,   0.f,    0.f, 0.f,
+    0.f,   192.f,  0.f, 0.5f + pad_pixels,
     256.f, 384.f,  1.f, 1.f,
-    256.f, 0.f,    1.f, 0.f,
+    256.f, 192.f,  1.f, 0.5f + pad_pixels,
   };
 
   glGenBuffers (1, &self->vertex_buffer);
@@ -152,7 +162,7 @@ gl_draw_frame (melonDSCore *self)
   glBindBuffer (GL_ARRAY_BUFFER, self->vertex_buffer);
   glBindVertexArray (self->vertex_array);
 
-  glDrawArrays (GL_TRIANGLES, 0, 6);
+  glDrawArrays (GL_TRIANGLES, 0, 12);
 
   glBindBuffer (GL_PIXEL_PACK_BUFFER, 0);
 }
