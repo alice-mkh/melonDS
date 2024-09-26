@@ -56,7 +56,6 @@ void main()
   fpos.xy = vPosition;
 
   fpos.xy = ((fpos.xy * 2.0) / SCREEN_SIZE) - 1.0;
-  fpos.y *= -1;
   fpos.z = 0.0;
   fpos.w = 1.0;
 
@@ -144,7 +143,7 @@ gl_init (melonDSCore *self)
 static void
 gl_draw_frame (melonDSCore *self)
 {
-  glBindFramebuffer (GL_FRAMEBUFFER, 0);
+  glBindFramebuffer (GL_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->context));
   glDisable (GL_DEPTH_TEST);
   glDepthMask (false);
   glDisable (GL_BLEND);
@@ -165,6 +164,7 @@ gl_draw_frame (melonDSCore *self)
   glDrawArrays (GL_TRIANGLES, 0, 12);
 
   glBindBuffer (GL_PIXEL_PACK_BUFFER, 0);
+  glBindFramebuffer (GL_FRAMEBUFFER, 0);
 }
 
 static gpointer
@@ -178,11 +178,14 @@ get_proc_address (const char *name)
 
 static gboolean
 melonds_core_load_rom (HsCore      *core,
-                       const char  *rom_path,
+                       const char **rom_paths,
+                       int          n_rom_paths,
                        const char  *save_path,
                        GError     **error)
 {
   melonDSCore *self = MELONDS_CORE (core);
+
+  g_assert (n_rom_paths == 1);
 
   g_set_str (&self->save_path, save_path);
 
@@ -196,7 +199,9 @@ melonds_core_load_rom (HsCore      *core,
 #if USE_GL
   self->context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
 
-  hs_gl_context_realize (self->context);
+  if (!hs_gl_context_realize (self->context, error))
+    return FALSE; // TODO fall back
+
   hs_gl_context_set_size (self->context, SCREEN_WIDTH, SCREEN_HEIGHT * 2);
 
   if (!gladLoadGLLoader (get_proc_address)) {
@@ -227,7 +232,7 @@ melonds_core_load_rom (HsCore      *core,
 
   g_autofree char *rom_data = NULL;
   gsize rom_length;
-  if (!g_file_get_contents (rom_path, &rom_data, &rom_length, error))
+  if (!g_file_get_contents (rom_paths[0], &rom_data, &rom_length, error))
     return FALSE;
 
   g_autofree char *save_data = NULL;
