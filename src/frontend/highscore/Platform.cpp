@@ -363,6 +363,10 @@ void WriteFirmware(const SPI_Firmware::Firmware& firmware, u32 writeoffset, u32 
 {
 }
 
+void WriteDateTime(int year, int month, int day, int hour, int minute, int second)
+{
+}
+
 bool MP_Init()
 {
     return false;
