@@ -58,11 +58,6 @@ int GetConfigInt(ConfigEntry entry)
     case JIT_MaxBlockSize: return 32;
 #endif
 
-    case Firm_Language: return 1; // TODO
-    case Firm_BirthdayMonth: return 1; // TODO
-    case Firm_BirthdayDay: return 1; // TODO
-    case Firm_Color: return 0; // TODO
-
     case AudioBitDepth: return 2;
     }
 
@@ -87,12 +82,6 @@ bool GetConfigBool(ConfigEntry entry)
 
 std::string GetConfigString(ConfigEntry entry)
 {
-    switch (entry)
-    {
-    case Firm_Username: return "melonDS"; // TODO
-    case Firm_Message: return ""; // TODO
-    }
-
     return "";
 }
 
