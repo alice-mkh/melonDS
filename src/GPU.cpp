@@ -176,6 +176,10 @@ void DeInit()
     Framebuffer[0][1] = nullptr;
     Framebuffer[1][0] = nullptr;
     Framebuffer[1][1] = nullptr;
+
+#ifdef OGLRENDERER_ENABLED
+    CurGLCompositor = nullptr;
+#endif
 }
 
 void ResetVRAMCache()
