@@ -79,6 +79,7 @@ bool GetConfigBool(ConfigEntry entry)
     case JIT_BranchOptimizations: true;
     case JIT_FastMemory: return true;
 #endif
+    case ExternalBIOSEnable: return false;
     }
 
     return false;
@@ -138,7 +139,6 @@ static std::string GetModeString(FileMode mode, bool file_exists)
     return modeString;
 }
 
-
 FileHandle* OpenFile(const std::string& path, FileMode mode) {
     g_autoptr (GFile) file = g_file_new_for_path (path.c_str ());
     gboolean file_exists = g_file_query_exists (file, NULL);
@@ -146,7 +146,6 @@ FileHandle* OpenFile(const std::string& path, FileMode mode) {
 
     return (FileHandle*) fopen (path.c_str (), mode_string.c_str ());
 }
-
 
 FileHandle* OpenLocalFile(const std::string& path, FileMode mode) {
     return OpenFile (path, mode);
@@ -368,6 +367,10 @@ void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen
 }
 
 void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen)
+{
+}
+
+void WriteFirmware(const SPI_Firmware::Firmware& firmware, u32 writeoffset, u32 writelen)
 {
 }
 

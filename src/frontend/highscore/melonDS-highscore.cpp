@@ -1,7 +1,10 @@
 #include "melonDS-highscore.h"
 
+#include "FreeBIOS.h"
 #include "GPU.h"
 #include "NDS.h"
+#include "Platform.h"
+#include "SPI.h"
 #include "SPU.h"
 
 #include <cmath>
@@ -95,23 +98,13 @@ gl_init (melonDSCore *self)
   glUseProgram (pid);
   glUniform1i (glGetUniformLocation (pid, "ScreenTex"), 0);
 
-  const int padded_height = SCREEN_HEIGHT * 2 + 2;
-  const float pad_pixels = 1.f / padded_height;
-
   const float vertices[] = {
     0.f,   0.f,    0.f, 0.f,
-    0.f,   192.f,  0.f, 0.5f - pad_pixels,
-    256.f, 192.f,  1.f, 0.5f - pad_pixels,
-    0.f,   0.f,    0.f, 0.f,
-    256.f, 192.f,  1.f, 0.5f - pad_pixels,
-    256.f, 0.f,    1.f, 0.f,
-
-    0.f,   192.f,  0.f, 0.5f + pad_pixels,
     0.f,   384.f,  0.f, 1.f,
     256.f, 384.f,  1.f, 1.f,
-    0.f,   192.f,  0.f, 0.5f + pad_pixels,
+    0.f,   0.f,    0.f, 0.f,
     256.f, 384.f,  1.f, 1.f,
-    256.f, 192.f,  1.f, 0.5f + pad_pixels,
+    256.f, 0.f,    1.f, 0.f,
   };
 
   glGenBuffers (1, &self->vertex_buffer);
@@ -133,11 +126,6 @@ gl_init (melonDSCore *self)
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT * 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-
-  // fill the padding
-  u8 zeroData[SCREEN_WIDTH * 4 * 4];
-  memset (zeroData, 0, sizeof (zeroData));
-  glTexSubImage2D (GL_TEXTURE_2D, 0, 0, SCREEN_HEIGHT, SCREEN_WIDTH, 2, GL_RGBA, GL_UNSIGNED_BYTE, zeroData);
 }
 
 static void
@@ -161,7 +149,7 @@ gl_draw_frame (melonDSCore *self)
   glBindBuffer (GL_ARRAY_BUFFER, self->vertex_buffer);
   glBindVertexArray (self->vertex_array);
 
-  glDrawArrays (GL_TRIANGLES, 0, 12);
+  glDrawArrays (GL_TRIANGLES, 0, 6);
 
   glBindBuffer (GL_PIXEL_PACK_BUFFER, 0);
   glBindFramebuffer (GL_FRAMEBUFFER, 0);
@@ -175,6 +163,17 @@ get_proc_address (const char *name)
   return hs_gl_context_get_proc_address (self->context, name);
 }
 #endif
+
+static void
+load_bios (melonDSCore *self)
+{
+  memcpy (NDS::ARM9BIOS, bios_arm9_bin, sizeof (bios_arm9_bin));
+  memcpy (NDS::ARM7BIOS, bios_arm7_bin, sizeof (bios_arm7_bin));
+
+  std::unique_ptr<SPI_Firmware::Firmware> firmware = std::make_unique<SPI_Firmware::Firmware>(0); // 1 for DSi
+
+  SPI_Firmware::InstallFirmware (std::move(firmware));
+}
 
 static gboolean
 melonds_core_load_rom (HsCore      *core,
@@ -228,7 +227,7 @@ melonds_core_load_rom (HsCore      *core,
   SPU::SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
   NDS::SetConsoleType (0); // 0: DS, 1: DSi
 
-  NDS::LoadBIOS ();
+  load_bios (self);
 
   g_autofree char *rom_data = NULL;
   gsize rom_length;
@@ -246,7 +245,10 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  NDS::SetupDirectBoot ("");
+  NDS::Reset();
+
+  if (NDS::NeedsDirectBoot())
+    NDS::SetupDirectBoot ("");
 
   return TRUE;
 }
@@ -261,7 +263,9 @@ static void
 melonds_core_reset (HsCore *core)
 {
   NDS::Reset ();
-  NDS::SetupDirectBoot ("");
+
+  if (NDS::NeedsDirectBoot())
+    NDS::SetupDirectBoot ("");
 }
 
 static void
@@ -348,6 +352,26 @@ melonds_core_run_frame (HsCore *core)
 #endif
 }
 
+static gboolean
+melonds_core_reload_save (HsCore      *core,
+                          const char  *save_path,
+                          GError     **error)
+{
+  melonDSCore *self = MELONDS_CORE (core);
+
+  g_set_str (&self->save_path, save_path);
+
+  g_autofree char *save_data = NULL;
+  gsize save_length = 0;
+  g_autoptr (GFile) save_file = g_file_new_for_path (save_path);
+  if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
+    return FALSE;
+
+  NDS::LoadSave ((const u8*) save_data, save_length);
+
+  return TRUE;
+}
+
 static void
 melonds_core_load_state (HsCore          *core,
                          const char      *path,
@@ -364,9 +388,10 @@ melonds_core_load_state (HsCore          *core,
 
   Savestate *state = new Savestate (data, length, false);
 
-  if (!NDS::DoSavestate (state)) {
+  if (!NDS::DoSavestate (state) || state->Error) {
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load state");
     callback (core, &error);
+    return;
   }
 
   delete state;
@@ -379,10 +404,11 @@ melonds_core_save_state (HsCore          *core,
                          HsStateCallback  callback)
 {
   g_autoptr (GFile) file = g_file_new_for_path (path);
-  Savestate state;
   GError *error = NULL;
 
-  if (!NDS::DoSavestate (&state)) {
+  Savestate state (Savestate::DEFAULT_SIZE);
+
+  if (!NDS::DoSavestate (&state) || state.Error) {
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to save state");
     callback (core, &error);
     return;
@@ -393,7 +419,6 @@ melonds_core_save_state (HsCore          *core,
     callback (core, &error);
     return;
   }
-
 
   callback (core, NULL);
 }
@@ -438,6 +463,8 @@ melonds_core_class_init (melonDSCoreClass *klass)
   core_class->stop = melonds_core_stop;
   core_class->poll_input = melonds_core_poll_input;
   core_class->run_frame = melonds_core_run_frame;
+
+  core_class->reload_save = melonds_core_reload_save;
 
   core_class->load_state = melonds_core_load_state;
   core_class->save_state = melonds_core_save_state;
