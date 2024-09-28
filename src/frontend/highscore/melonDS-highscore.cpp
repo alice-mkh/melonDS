@@ -19,7 +19,7 @@
 #define SAMPLE_RATE 32823.6328125
 #define MAX_SAMPLES 1500
 
-#define USE_COMPUTE 1
+#define USE_COMPUTE 0
 
 using namespace melonDS;
 
@@ -331,8 +331,10 @@ melonds_core_load_rom (HsCore      *core,
   if (self->console->NeedsDirectBoot ())
     self->console->SetupDirectBoot ("");
 
+#if USE_COMPUTE
   if (self->gl_context)
     OpenGL::LoadShaderCache ();
+#endif
 
   self->audio_buffer = g_new0 (gint16, MAX_SAMPLES);
 
@@ -369,8 +371,10 @@ melonds_core_stop (HsCore *core)
 {
   melonDSCore *self = MELONDS_CORE (core);
 
+#if USE_COMPUTE
   if (self->gl_context)
     OpenGL::SaveShaderCache ();
+#endif
 
   self->console->Halt ();
   self->console->Stop ();
