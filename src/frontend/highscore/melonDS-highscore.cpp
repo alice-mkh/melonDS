@@ -224,7 +224,7 @@ melonds_core_load_rom (HsCore      *core,
   GPU::SetRenderSettings (0, vsettings);
 #endif
 
-  SPU::SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
+  NDS::SPU->SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
   NDS::SetConsoleType (0); // 0: DS, 1: DSi
 
   load_bios (self);
@@ -334,9 +334,9 @@ melonds_core_run_frame (HsCore *core)
 
   NDS::RunFrame ();
 
-  u32 n_samples = SPU::GetOutputSize ();
+  u32 n_samples = NDS::SPU->GetOutputSize ();
   gint16 *samples = g_new0 (gint16, n_samples * 2);
-  SPU::ReadOutput (samples, n_samples);
+  NDS::SPU->ReadOutput (samples, n_samples);
   hs_core_play_samples (core, samples, n_samples * 2);
   g_free (samples);
 
