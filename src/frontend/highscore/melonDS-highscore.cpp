@@ -302,8 +302,6 @@ melonds_core_load_rom (HsCore      *core,
     self->console->GPU.SetRenderer3D (std::move (renderer));
   }
 
-  self->console->SPU.SetInterpolation (AudioInterpolation::None);
-
   g_autofree char *rom_data = NULL;
   gsize rom_length;
   if (!g_file_get_contents (self->rom_path, &rom_data, &rom_length, error))
