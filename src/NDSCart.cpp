@@ -111,7 +111,7 @@ void NDSCartSlot::Key1_ApplyKeycode(u32* keycode, u32 mod) noexcept
 
 void NDSCartSlot::Key1_LoadKeyBuf(bool dsi, const u8 *bios, u32 biosLength) noexcept
 {
-    if (!NDS.IsLoadedARM7BIOSBuiltIn())
+    if (NDS.IsLoadedARM7BIOSKnownNative())
     {
         u32 expected_bios_length = dsi ? 0x10000 : 0x4000;
         if (biosLength != expected_bios_length)
@@ -261,7 +261,7 @@ int CartCommon::ROMCommandStart(NDS& nds, NDSCartSlot& cartslot, const u8* cmd, 
 
         case 0x3C:
             CmdEncMode = 1;
-            cartslot.Key1_InitKeycode(false, *(u32*)&ROM[0xC], 2, 2, &nds.ARM7BIOS[0], sizeof(NDS::ARM7BIOS));
+            cartslot.Key1_InitKeycode(false, *(u32*)&ROM[0xC], 2, 2, nds.GetARM7BIOS().data(), ARM7BIOSSize);
             DSiMode = false;
             return 0;
 
@@ -404,7 +404,11 @@ CartRetail::CartRetail(std::unique_ptr<u8[]>&& rom, u32 len, u32 chipid, bool ba
         { // Copy in what we can, truncate the rest.
             SRAM = std::make_unique<u8[]>(SRAMLength);
             memset(SRAM.get(), 0xFF, SRAMLength);
-            memcpy(SRAM.get(), sram.get(), std::min(sramlen, SRAMLength));
+
+            if (sram)
+            { // If we have anything to copy, that is.
+                memcpy(SRAM.get(), sram.get(), std::min(sramlen, SRAMLength));
+            }
         }
     }
 
@@ -1540,10 +1544,10 @@ void NDSCartSlot::DecryptSecureArea(u8* out) noexcept
 
     memcpy(out, &cartrom[arm9base], 0x800);
 
-    Key1_InitKeycode(false, gamecode, 2, 2, &NDS.ARM7BIOS[0], sizeof(NDS::ARM7BIOS));
+    Key1_InitKeycode(false, gamecode, 2, 2, NDS.GetARM7BIOS().data(), ARM7BIOSSize);
     Key1_Decrypt((u32*)&out[0]);
 
-    Key1_InitKeycode(false, gamecode, 3, 2, &NDS.ARM7BIOS[0], sizeof(NDS::ARM7BIOS));
+    Key1_InitKeycode(false, gamecode, 3, 2, NDS.GetARM7BIOS().data(), ARM7BIOSSize);
     for (u32 i = 0; i < 0x800; i += 8)
         Key1_Decrypt((u32*)&out[i]);
 
@@ -1650,11 +1654,18 @@ std::unique_ptr<CartCommon> ParseROM(std::unique_ptr<u8[]>&& romdata, u32 romlen
     }
 
     std::unique_ptr<CartCommon> cart;
-    auto [sram, sramlen] = args ? std::move(*args->SRAM) : std::make_pair(nullptr, 0);
+    std::unique_ptr<u8[]> sram = args ? std::move(args->SRAM) : nullptr;
+    u32 sramlen = args ? args->SRAMLength : 0;
     if (homebrew)
-        cart = std::make_unique<CartHomebrew>(std::move(cartrom), cartromsize, cartid, romparams, args ? std::move(args->SDCard) : std::nullopt);
+    {
+        std::optional<FATStorage> sdcard = args && args->SDCard ? std::make_optional<FATStorage>(std::move(*args->SDCard)) : std::nullopt;
+        cart = std::make_unique<CartHomebrew>(std::move(cartrom), cartromsize, cartid, romparams, std::move(sdcard));
+    }
     else if (gametitle[0] == 0 && !strncmp("SD/TF-NDS", gametitle + 1, 9) && gamecode == 0x414D5341)
-        cart = std::make_unique<CartR4>(std::move(cartrom), cartromsize, cartid, romparams, CartR4TypeR4, CartR4LanguageEnglish, args ? std::move(args->SDCard) : std::nullopt);
+    {
+        std::optional<FATStorage> sdcard = args && args->SDCard ? std::make_optional<FATStorage>(std::move(*args->SDCard)) : std::nullopt;
+        cart = std::make_unique<CartR4>(std::move(cartrom), cartromsize, cartid, romparams, CartR4TypeR4, CartR4LanguageEnglish, std::move(sdcard));
+    }
     else if (cartid & 0x08000000)
         cart = std::make_unique<CartRetailNAND>(std::move(cartrom), cartromsize, cartid, romparams, std::move(sram), sramlen);
     else if (irversion != 0)
@@ -1695,11 +1706,11 @@ void NDSCartSlot::SetCart(std::unique_ptr<CartCommon>&& cart) noexcept
 
             strncpy((char*)&cartrom[header.ARM9ROMOffset], "encryObj", 8);
 
-            Key1_InitKeycode(false, romparams.GameCode, 3, 2, &NDS.ARM7BIOS[0], sizeof(NDS::ARM7BIOS));
+            Key1_InitKeycode(false, romparams.GameCode, 3, 2, NDS.GetARM7BIOS().data(), ARM7BIOSSize);
             for (u32 i = 0; i < 0x800; i += 8)
                 Key1_Encrypt((u32*)&cartrom[header.ARM9ROMOffset + i]);
 
-            Key1_InitKeycode(false, romparams.GameCode, 2, 2, &NDS.ARM7BIOS[0], sizeof(NDS::ARM7BIOS));
+            Key1_InitKeycode(false, romparams.GameCode, 2, 2, NDS.GetARM7BIOS().data(), ARM7BIOSSize);
             Key1_Encrypt((u32*)&cartrom[header.ARM9ROMOffset]);
 
             Log(LogLevel::Debug, "Re-encrypted cart secure area\n");

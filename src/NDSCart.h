@@ -62,9 +62,14 @@ struct NDSCartArgs
     std::optional<FATStorageArgs> SDCard = std::nullopt;
 
     /// Save RAM to load into the cartridge.
-    /// If \c nullopt, then the cart's SRAM buffer will be empty.
+    /// If \c nullptr, then the cart's SRAM buffer will be empty.
     /// Ignored for homebrew ROMs.
-    std::optional<std::pair<std::unique_ptr<u8[]>, u32>> SRAM = std::nullopt;
+    std::unique_ptr<u8[]> SRAM = nullptr;
+
+    /// The length of the buffer in SRAM.
+    /// If 0, then the cart's SRAM buffer will be empty.
+    /// Ignored for homebrew ROMs.
+    u32 SRAMLength = 0;
 };
 
 // CartCommon -- base code shared by all cart types
@@ -251,6 +256,22 @@ public:
     {
         SD = std::move(sdcard);
         sdcard = std::nullopt;
+        // moving from an optional doesn't set it to nullopt,
+        // it just leaves behind an optional with a moved-from value
+    }
+
+    void SetSDCard(std::optional<FATStorageArgs>&& args) noexcept
+    {
+        // Close the open SD card (if any) so that its contents are flushed to disk.
+        // Also, if args refers to the same image file that SD is currently using,
+        // this will ensure that we don't have two open read-write handles
+        // to the same file.
+        SD = std::nullopt;
+
+        if (args)
+            SD = FATStorage(std::move(*args));
+
+        args = std::nullopt;
         // moving from an optional doesn't set it to nullopt,
         // it just leaves behind an optional with a moved-from value
     }

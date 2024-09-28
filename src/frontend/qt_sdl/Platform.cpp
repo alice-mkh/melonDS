@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include <string>
+#include <QCoreApplication>
 #include <QStandardPaths>
 #include <QString>
 #include <QDateTime>
@@ -30,6 +31,7 @@
 #include <QMutex>
 #include <QOpenGLContext>
 #include <QSharedMemory>
+#include <QTemporaryFile>
 #include <SDL_loadso.h>
 
 #include "Platform.h"
@@ -39,7 +41,6 @@
 #include "LAN_Socket.h"
 #include "LAN_PCap.h"
 #include "LocalMP.h"
-#include "OSD.h"
 #include "SPI_Firmware.h"
 
 #ifdef __WIN32__
@@ -53,9 +54,49 @@ extern CameraManager* camManager[2];
 
 void emuStop();
 
+// TEMP
+//#include "main.h"
+//extern MainWindow* mainWindow;
+
 
 namespace melonDS::Platform
 {
+
+void PathInit(int argc, char** argv)
+{
+    // First, check for the portable directory next to the executable.
+    QString appdirpath = QCoreApplication::applicationDirPath();
+    QString portablepath = appdirpath + QDir::separator() + "portable";
+
+#if defined(__APPLE__)
+    // On Apple platforms we may need to navigate outside an app bundle.
+    // The executable directory would be "melonDS.app/Contents/MacOS", so we need to go a total of three steps up.
+    QDir bundledir(appdirpath);
+    if (bundledir.cd("..") && bundledir.cd("..") && bundledir.dirName().endsWith(".app") && bundledir.cd(".."))
+    {
+        portablepath = bundledir.absolutePath() + QDir::separator() + "portable";
+    }
+#endif
+
+    QDir portabledir(portablepath);
+    if (portabledir.exists())
+    {
+        EmuDirectory = portabledir.absolutePath().toStdString();
+    }
+    else
+    {
+        // If no overrides are specified, use the default path.
+#if defined(__WIN32__) && defined(WIN32_PORTABLE)
+        EmuDirectory = appdirpath.toStdString();
+#else
+        QString confdir;
+        QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
+        config.mkdir("melonDS");
+        confdir = config.absolutePath() + QDir::separator() + "melonDS";
+        EmuDirectory = confdir.toStdString();
+#endif
+    }
+}
 
 QSharedMemory* IPCBuffer = nullptr;
 int IPCInstanceID;
@@ -66,12 +107,25 @@ void IPCInit()
 
     IPCBuffer = new QSharedMemory("melonIPC");
 
+#if !defined(Q_OS_WINDOWS)
+    // QSharedMemory instances can be left over from crashed processes on UNIX platforms.
+    // To prevent melonDS thinking there's another instance, we attach and then immediately detach from the
+    // shared memory. If no other process was actually using it, it'll be destroyed and we'll have a clean
+    // shared memory buffer after creating it again below.
+    if (IPCBuffer->attach())
+    {
+        IPCBuffer->detach();
+        delete IPCBuffer;
+        IPCBuffer = new QSharedMemory("melonIPC");
+    }
+#endif
+
     if (!IPCBuffer->attach())
     {
         Log(LogLevel::Info, "IPC sharedmem doesn't exist. creating\n");
         if (!IPCBuffer->create(1024))
         {
-            Log(LogLevel::Error, "IPC sharedmem create failed :(\n");
+            Log(LogLevel::Error, "IPC sharedmem create failed: %s\n", IPCBuffer->errorString().toStdString().c_str());
             delete IPCBuffer;
             IPCBuffer = nullptr;
             return;
@@ -117,38 +171,7 @@ void IPCDeInit()
 
 void Init(int argc, char** argv)
 {
-#if defined(__WIN32__) || defined(PORTABLE)
-    if (argc > 0 && strlen(argv[0]) > 0)
-    {
-        int len = strlen(argv[0]);
-        while (len > 0)
-        {
-            if (argv[0][len] == '/') break;
-            if (argv[0][len] == '\\') break;
-            len--;
-        }
-        if (len > 0)
-        {
-            std::string emudir = argv[0];
-            EmuDirectory = emudir.substr(0, len);
-        }
-        else
-        {
-            EmuDirectory = ".";
-        }
-    }
-    else
-    {
-        EmuDirectory = ".";
-    }
-#else
-    QString confdir;
-    QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
-    config.mkdir("melonDS");
-    confdir = config.absolutePath() + "/melonDS/";
-    EmuDirectory = confdir.toStdString();
-#endif
-
+    PathInit(argc, argv);
     IPCInit();
 }
 
@@ -164,14 +187,14 @@ void SignalStop(StopReason reason)
     {
         case StopReason::GBAModeNotSupported:
             Log(LogLevel::Error, "!! GBA MODE NOT SUPPORTED\n");
-            OSD::AddMessage(0xFFA0A0, "GBA mode not supported.");
+            //mainWindow->osdAddMessage(0xFFA0A0, "GBA mode not supported.");
             break;
         case StopReason::BadExceptionRegion:
-            OSD::AddMessage(0xFFA0A0, "Internal error.");
+            //mainWindow->osdAddMessage(0xFFA0A0, "Internal error.");
             break;
         case StopReason::PowerOff:
         case StopReason::External:
-            OSD::AddMessage(0xFFC040, "Shutdown");
+            //mainWindow->osdAddMessage(0xFFC040, "Shutdown");
         default:
             break;
     }
@@ -193,8 +216,33 @@ std::string InstanceFileSuffix()
     return suffix;
 }
 
+static QIODevice::OpenMode GetQMode(FileMode mode)
+{
+    QIODevice::OpenMode qmode = QIODevice::OpenModeFlag::NotOpen;
+    if (mode & FileMode::Read)
+        qmode |= QIODevice::OpenModeFlag::ReadOnly;
+    if (mode & FileMode::Write)
+        qmode |= QIODevice::OpenModeFlag::WriteOnly;
+    if (mode & FileMode::Append)
+        qmode |= QIODevice::OpenModeFlag::Append;
+
+    if ((mode & FileMode::Write) && !(mode & FileMode::Preserve))
+        qmode |= QIODevice::OpenModeFlag::Truncate;
+
+    if (mode & FileMode::NoCreate)
+        qmode |= QIODevice::OpenModeFlag::ExistingOnly;
+
+    if (mode & FileMode::Text)
+        qmode |= QIODevice::OpenModeFlag::Text;
+
+    return qmode;
+}
+
 constexpr char AccessMode(FileMode mode, bool file_exists)
 {
+    if (mode & FileMode::Append)
+        return  'a';
+
     if (!(mode & FileMode::Write))
         // If we're only opening the file for reading...
         return 'r';
@@ -233,16 +281,21 @@ static std::string GetModeString(FileMode mode, bool file_exists)
 
 FileHandle* OpenFile(const std::string& path, FileMode mode)
 {
-    if ((mode & FileMode::ReadWrite) == FileMode::None)
+    if ((mode & (FileMode::ReadWrite | FileMode::Append)) == FileMode::None)
     { // If we aren't reading or writing, then we can't open the file
         Log(LogLevel::Error, "Attempted to open \"%s\" in neither read nor write mode (FileMode 0x%x)\n", path.c_str(), mode);
         return nullptr;
     }
 
-    bool file_exists = QFile::exists(QString::fromStdString(path));
-    std::string modeString = GetModeString(mode, file_exists);
+    QString qpath{QString::fromStdString(path)};
 
-    FILE* file = fopen(path.c_str(), modeString.c_str());
+    std::string modeString = GetModeString(mode, QFile::exists(qpath));
+    QIODevice::OpenMode qmode = GetQMode(mode);
+    QFile qfile{qpath};
+    qfile.open(qmode);
+    FILE* file = fdopen(dup(qfile.handle()), modeString.c_str());
+    qfile.close();
+
     if (file)
     {
         Log(LogLevel::Debug, "Opened \"%s\" with FileMode 0x%x (effective mode \"%s\")\n", path.c_str(), mode, modeString.c_str());
@@ -268,15 +321,7 @@ FileHandle* OpenLocalFile(const std::string& path, FileMode mode)
     }
     else
     {
-#ifdef PORTABLE
         fullpath = QString::fromStdString(EmuDirectory) + QDir::separator() + qpath;
-#else
-        // Check user configuration directory
-        QDir config(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
-        config.mkdir("melonDS");
-        fullpath = config.absolutePath() + "/melonDS/";
-        fullpath.append(qpath);
-#endif
     }
 
     return OpenFile(fullpath.toStdString(), mode);
@@ -311,6 +356,44 @@ bool LocalFileExists(const std::string& name)
     if (!f) return false;
     CloseFile(f);
     return true;
+}
+
+bool CheckFileWritable(const std::string& filepath)
+{
+    FileHandle* file = Platform::OpenFile(filepath.c_str(), FileMode::Read);
+
+    if (file)
+    {
+        // if the file exists, check if it can be opened for writing.
+        Platform::CloseFile(file);
+        file = Platform::OpenFile(filepath.c_str(), FileMode::Append);
+        if (file)
+        {
+            Platform::CloseFile(file);
+            return true;
+        }
+        else return false;
+    }
+    else
+    {
+        // if the file does not exist, create a temporary file to check, to avoid creating an empty file.
+        if (QTemporaryFile(filepath.c_str()).open())
+        {
+            return true;
+        }
+        else return false;
+    }
+}
+
+bool CheckLocalFileWritable(const std::string& name)
+{
+    FileHandle* file = Platform::OpenLocalFile(name.c_str(), FileMode::Append);
+    if (file)
+    {
+        Platform::CloseFile(file);
+        return true;
+    }
+    else return false;
 }
 
 bool FileSeek(FileHandle* file, s64 offset, FileSeekOrigin origin)
