@@ -258,6 +258,10 @@ melonds_core_load_rom (HsCore      *core,
   if (!g_file_query_exists (save_dir, NULL) && !g_file_make_directory_with_parents (save_dir, NULL, error))
     return FALSE;
 
+  g_autoptr (GFile) save_file = g_file_get_child (save_dir, "save.sav");
+
+  g_set_str (&self->save_path, g_file_get_path (save_file));
+
   NDSArgs nds_args = {};
   self->console = new NDS (std::move (nds_args), self);
   NDS::Current = self->console;
@@ -307,21 +311,21 @@ melonds_core_load_rom (HsCore      *core,
   if (!g_file_get_contents (self->rom_path, &rom_data, &rom_length, error))
     return FALSE;
 
-  g_autoptr (GFile) save_file = g_file_get_child (save_dir, "save.sav");
-  g_autofree char *save_data = NULL;
-  gsize save_length = 0;
-  if (g_file_query_exists (save_file, NULL) && !g_file_load_contents (save_file, NULL, &save_data, &save_length, NULL, error))
-    return FALSE;
-
-  g_set_str (&self->save_path, g_file_get_path (save_file));
-
-  auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, self, std::nullopt);//std::move (cart_args));
+  auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, self, std::nullopt);
   if (!cart) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to parse ROM");
     return FALSE;
   }
 
-  cart->SetSaveMemory ((const u8*) save_data, save_length);
+  if (g_file_query_exists (save_file, NULL)) {
+    g_autofree char *save_data = NULL;
+    gsize save_length = 0;
+
+    if (!g_file_load_contents (save_file, NULL, &save_data, &save_length, NULL, error))
+      return FALSE;
+
+    cart->SetSaveMemory ((const u8*) save_data, save_length);
+  }
 
   self->console->SetNDSCart (std::move (cart));
   self->console->Reset ();
@@ -455,16 +459,19 @@ melonds_core_reload_save (HsCore      *core,
   if (!try_migrate_desmume_save (self->rom_path, save_path, error))
     return FALSE;
 
-  g_autofree char *save_data = NULL;
-  gsize save_length = 0;
   g_autoptr (GFile) save_dir = g_file_new_for_path (save_path);
   g_autoptr (GFile) save_file = g_file_get_child (save_dir, "save.sav");
-  if (g_file_query_exists (save_file, NULL) && !g_file_load_contents (save_file, NULL, &save_data, &save_length, NULL, error))
-    return FALSE;
+  if (g_file_query_exists (save_file, NULL)) {
+    g_autofree char *save_data = NULL;
+    gsize save_length = 0;
+
+    if (!g_file_load_contents (save_file, NULL, &save_data, &save_length, NULL, error))
+      return FALSE;
+
+    self->console->GetNDSCart ()->SetSaveMemory ((const u8*) save_data, save_length);
+  }
 
   g_set_str (&self->save_path, g_file_get_path (save_file));
-
-  self->console->GetNDSCart ()->SetSaveMemory ((const u8*) save_data, save_length);
 
   return TRUE;
 }
