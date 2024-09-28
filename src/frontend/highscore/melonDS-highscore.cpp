@@ -2,6 +2,8 @@
 
 #include "FreeBIOS.h"
 #include "GPU.h"
+#include "GPU3D_Soft.h"
+#include "GPU3D_OpenGL.h"
 #include "NDS.h"
 #include "Platform.h"
 #include "SPI.h"
@@ -135,7 +137,7 @@ static void
 gl_draw_frame (melonDSCore *self)
 {
   int front_buf = self->console->GPU.FrontBuffer;
-//  if (!self->console->GPU.Framebuffer[front_buf][0] || !self->console->GPU.Framebuffer[front_buf][1])
+//  if (!self->console->GPU.Framebuffer[front_buf][0].get () || !self->console->GPU.Framebuffer[front_buf][1].get ())
 //    return;
 
   glBindFramebuffer (GL_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->context));
@@ -151,7 +153,7 @@ gl_draw_frame (melonDSCore *self)
   glUseProgram (self->program[2]);
   glActiveTexture (GL_TEXTURE0);
 
-  self->console->GPU.CurGLCompositor->BindOutputTexture (front_buf);
+  static_cast<GLRenderer&> (self->console->GPU.GetRenderer3D ()).GetCompositor ().BindOutputTexture (front_buf);
 
   glBindBuffer (GL_ARRAY_BUFFER, self->vertex_buffer);
   glBindVertexArray (self->vertex_array);
@@ -203,8 +205,6 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  RenderSettings vsettings;
-
 #if USE_GL
   self->context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
 
@@ -218,20 +218,16 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  vsettings.GL_ScaleFactor = 1;
-  vsettings.GL_BetterPolygons = false;
-
-  self->console->GPU.InitRenderer (1); // GL
-  self->console->GPU.SetRenderSettings (1, vsettings);
+  auto renderer = GLRenderer::New (self->console->GPU);
+  renderer->SetRenderSettings (false, 1);
+  self->console->GPU.SetRenderer3D (std::move (renderer));
 
   gl_init (self);
 #else
   self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_XRGB8888_REV);
 
-  vsettings.Soft_Threaded = false;
-
-  self->console->GPU.InitRenderer (0); // Software
-  self->console->GPU.SetRenderSettings (0, vsettings);
+  auto renderer = std::make_unique<SoftRenderer> (self->console->GPU, true);
+  self->console->GPU.SetRenderer3D (std::move (renderer));
 #endif
 
   self->console->SPU.SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
@@ -363,8 +359,8 @@ melonds_core_run_frame (HsCore *core)
   size_t screen_size = (SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   u8 *vbuf0 = (u8*) hs_software_context_get_framebuffer (self->context);
   u8 *vbuf1 = vbuf0 + screen_size;
-  memcpy (vbuf0, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][0], screen_size);
-  memcpy (vbuf1, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][1], screen_size);
+  memcpy (vbuf0, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][0].get (), screen_size);
+  memcpy (vbuf1, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][1].get (), screen_size);
 #endif
 }
 
