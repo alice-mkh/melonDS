@@ -97,6 +97,27 @@ FileHandle* OpenFile(const std::string& path, FileMode mode) {
 }
 
 FileHandle* OpenLocalFile(const std::string& path, FileMode mode) {
+    if (path == "shadercache") {
+        const char *cache_path = melonds_core_get_cache_path ();
+
+        if (mode & FileMode::Write) {
+          g_autoptr (GFile) cache_file = g_file_new_for_path (cache_path);
+          g_autoptr (GError) error = NULL;
+
+          if (!g_file_query_exists (cache_file, NULL) && !g_file_make_directory_with_parents (cache_file, NULL, &error)) {
+            g_autofree char *message = g_strdup_printf ("Failed to create cache dir: %s", error->message);
+
+            melonds_core_log (HS_LOG_CRITICAL, message);
+
+            return nullptr;
+          }
+        }
+
+        std::string full_path = std::string (cache_path) + "/" + path;
+
+        return OpenFile (full_path, mode);
+    }
+
     return OpenFile (path, mode);
 }
 

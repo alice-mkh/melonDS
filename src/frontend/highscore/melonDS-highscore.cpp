@@ -2,8 +2,9 @@
 
 #include "FreeBIOS.h"
 #include "GPU.h"
-#include "GPU3D_Soft.h"
+#include "GPU3D_Compute.h"
 #include "GPU3D_OpenGL.h"
+#include "GPU3D_Soft.h"
 #include "NDS.h"
 #include "Platform.h"
 #include "SPI.h"
@@ -18,6 +19,7 @@
 #define SAMPLE_RATE 32823.6328125
 
 #define USE_GL 1
+#define USE_COMPUTE 1
 
 using namespace melonDS;
 
@@ -34,7 +36,7 @@ struct _melonDSCore
   GLuint vertex_buffer;
   GLuint vertex_array;
   GLuint texture;
-  GLuint program[3];
+  GLuint program;
 #else
   HsSoftwareContext *context;
 #endif
@@ -81,17 +83,14 @@ void main()
 static void
 gl_init (melonDSCore *self)
 {
-  OpenGL::BuildShaderProgram (VERTEX_SHADER, FRAGMENT_SHADER, self->program, "ScreenShader");
+  OpenGL::CompileVertexFragmentProgram (self->program,
+                                        VERTEX_SHADER, FRAGMENT_SHADER,
+                                        "ScreenShader",
+                                        {{"vPosition", 0}, {"vTexcoord", 1}},
+                                        {{"oColor", 0}});
 
-  GLuint pid = self->program[2];
-  glBindAttribLocation (pid, 0, "vPosition");
-  glBindAttribLocation (pid, 1, "vTexcoord");
-  glBindFragDataLocation (pid, 0, "oColor");
-
-  OpenGL::LinkShaderProgram (self->program);
-
-  glUseProgram (pid);
-  glUniform1i (glGetUniformLocation (pid, "ScreenTex"), 0);
+  glUseProgram (self->program);
+  glUniform1i (glGetUniformLocation (self->program, "ScreenTex"), 0);
 
   const int padded_height = SCREEN_HEIGHT * 2 + 2;
   const float pad_pixels = 1.f / padded_height;
@@ -150,10 +149,10 @@ gl_draw_frame (melonDSCore *self)
   glClear (GL_COLOR_BUFFER_BIT);
 
   glViewport (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT * 2);
-  glUseProgram (self->program[2]);
+  glUseProgram (self->program);
   glActiveTexture (GL_TEXTURE0);
 
-  static_cast<GLRenderer&> (self->console->GPU.GetRenderer3D ()).GetCompositor ().BindOutputTexture (front_buf);
+  self->console->GPU.GetRenderer3D ().BindOutputTexture (front_buf);
 
   glBindBuffer (GL_ARRAY_BUFFER, self->vertex_buffer);
   glBindVertexArray (self->vertex_array);
@@ -207,8 +206,14 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
+#if USE_COMPUTE
+  auto renderer = ComputeRenderer::New ();
+  renderer->SetRenderSettings (1, false);
+#else
   auto renderer = GLRenderer::New ();
   renderer->SetRenderSettings (false, 1);
+#endif
+
   self->console->GPU.SetRenderer3D (std::move (renderer));
 
   gl_init (self);
@@ -253,6 +258,10 @@ melonds_core_load_rom (HsCore      *core,
   if (self->console->NeedsDirectBoot ())
     self->console->SetupDirectBoot ("");
 
+#if USE_GL
+  OpenGL::LoadShaderCache ();
+#endif
+
   return TRUE;
 }
 
@@ -262,6 +271,12 @@ melonds_core_start (HsCore *core)
   melonDSCore *self = MELONDS_CORE (core);
 
   self->console->Start ();
+
+  int current_shader, shaders_count;
+
+  do {
+    self->console->GPU.GetRenderer3D().ShaderCompileStep (current_shader, shaders_count);
+  } while (self->console->GPU.GetRenderer3D().NeedsShaderCompile ());
 }
 
 static void
@@ -280,6 +295,10 @@ melonds_core_stop (HsCore *core)
 {
   melonDSCore *self = MELONDS_CORE (core);
 
+#if USE_GL
+  OpenGL::SaveShaderCache ();
+#endif
+
   self->console->Halt ();
   self->console->Stop ();
 
@@ -287,8 +306,7 @@ melonds_core_stop (HsCore *core)
   glDeleteTextures (1, &self->texture);
   glDeleteVertexArrays (1, &self->vertex_array);
   glDeleteBuffers (1, &self->vertex_buffer);
-
-  OpenGL::DeleteShaderProgram (self->program);
+  glDeleteProgram (self->program);
 #endif
 
   delete self->console;
@@ -510,6 +528,12 @@ const char *
 melonds_core_get_save_path (void)
 {
   return MELONDS_CORE (core)->save_path;
+}
+
+const char *
+melonds_core_get_cache_path (void)
+{
+  return hs_core_get_cache_path (core);
 }
 
 GType
