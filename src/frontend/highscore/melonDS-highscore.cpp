@@ -320,18 +320,10 @@ melonds_core_stop (HsCore *core)
 }
 
 const int BUTTON_MAPPING[] = {
-  6,  // UP
-  7,  // DOWN
-  5,  // LEFT
-  4,  // RIGHT
-  0,  // A
-  1,  // B
-  10, // X
-  11, // Y
-  2,  // SELECT
-  3,  // START
-  9,  // L
-  8,  // R
+  6, 7, 5,  4,  // UP, DOWN, LEFT, RIGHT
+  0, 1, 10, 11, // A, B, X, Y
+  2, 3,         // SELECT, START
+  9, 8,         // L, R
 };
 
 static void
