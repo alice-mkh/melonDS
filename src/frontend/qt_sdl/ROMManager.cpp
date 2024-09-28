@@ -462,7 +462,7 @@ void UnloadCheats()
     {
         delete CheatFile;
         CheatFile = nullptr;
-        AREngine::SetCodeFile(nullptr);
+        NDS::AREngine->SetCodeFile(nullptr);
     }
 }
 
@@ -475,7 +475,7 @@ void LoadCheats()
     // TODO: check for error (malformed cheat file, ...)
     CheatFile = new ARCodeFile(filename);
 
-    AREngine::SetCodeFile(CheatsOn ? CheatFile : nullptr);
+    NDS::AREngine->SetCodeFile(CheatsOn ? CheatFile : nullptr);
 }
 
 void LoadBIOSFiles()
@@ -570,7 +570,7 @@ void EnableCheats(bool enable)
 {
     CheatsOn = enable;
     if (CheatFile)
-        AREngine::SetCodeFile(CheatsOn ? CheatFile : nullptr);
+        NDS::AREngine->SetCodeFile(CheatsOn ? CheatFile : nullptr);
 }
 
 ARCodeFile* GetCheatFile()
@@ -583,8 +583,8 @@ void SetBatteryLevels()
 {
     if (NDS::ConsoleType == 1)
     {
-        DSi_BPTWL::SetBatteryLevel(Config::DSiBatteryLevel);
-        DSi_BPTWL::SetBatteryCharging(Config::DSiBatteryCharging);
+        DSi::I2C->GetBPTWL()->SetBatteryLevel(Config::DSiBatteryLevel);
+        DSi::I2C->GetBPTWL()->SetBatteryCharging(Config::DSiBatteryCharging);
     }
     else
     {
@@ -1109,7 +1109,7 @@ bool LoadROM(QStringList filepath, bool reset)
 {
     if (filepath.empty()) return false;
 
-    u8* filedata;
+    u8* filedata = nullptr;
     u32 filelen;
 
     std::string basepath;
@@ -1362,7 +1362,7 @@ bool LoadGBAROM(QStringList filepath)
     {
         // file inside archive
 
-        u32 lenread = Archive::ExtractFileFromArchive(filepath.at(0), filepath.at(1), &filedata, &filelen);
+        s32 lenread = Archive::ExtractFileFromArchive(filepath.at(0), filepath.at(1), &filedata, &filelen);
         if (lenread < 0) return false;
         if (!filedata) return false;
         if (lenread != filelen)

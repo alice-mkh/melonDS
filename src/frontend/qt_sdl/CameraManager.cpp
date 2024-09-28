@@ -16,6 +16,8 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <QEventLoop>
+
 #include "CameraManager.h"
 #include "Config.h"
 
@@ -144,6 +146,7 @@ CameraManager::~CameraManager()
     // save settings here?
 
     delete[] frameBuffer;
+    delete[] tempFrameBuffer;
 }
 
 void CameraManager::init()
@@ -256,6 +259,12 @@ void CameraManager::init()
         if (camDevice)
         {
             camDevice->load();
+            if (camDevice->status() == QCamera::LoadingStatus)
+            {
+                QEventLoop loop;
+                connect(camDevice, &QCamera::statusChanged, &loop, &QEventLoop::quit);
+                loop.exec();
+            }
 
             const QList<QCameraViewfinderSettings> supported = camDevice->supportedViewfinderSettings();
             bool good = false;

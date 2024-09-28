@@ -1212,7 +1212,7 @@ int ClassifyAddress7(u32 addr)
     }
 }
 
-void WifiWrite32(u32 addr, u32 val)
+/*void WifiWrite32(u32 addr, u32 val)
 {
     Wifi::Write(addr, val & 0xFFFF);
     Wifi::Write(addr + 2, val >> 16);
@@ -1221,18 +1221,18 @@ void WifiWrite32(u32 addr, u32 val)
 u32 WifiRead32(u32 addr)
 {
     return (u32)Wifi::Read(addr) | ((u32)Wifi::Read(addr + 2) << 16);
-}
+}*/
 
 template <typename T>
 void VRAMWrite(u32 addr, T val)
 {
     switch (addr & 0x00E00000)
     {
-    case 0x00000000: GPU::WriteVRAM_ABG<T>(addr, val); return;
-    case 0x00200000: GPU::WriteVRAM_BBG<T>(addr, val); return;
-    case 0x00400000: GPU::WriteVRAM_AOBJ<T>(addr, val); return;
-    case 0x00600000: GPU::WriteVRAM_BOBJ<T>(addr, val); return;
-    default: GPU::WriteVRAM_LCDC<T>(addr, val); return;
+    case 0x00000000: NDS::GPU->WriteVRAM_ABG<T>(addr, val); return;
+    case 0x00200000: NDS::GPU->WriteVRAM_BBG<T>(addr, val); return;
+    case 0x00400000: NDS::GPU->WriteVRAM_AOBJ<T>(addr, val); return;
+    case 0x00600000: NDS::GPU->WriteVRAM_BOBJ<T>(addr, val); return;
+    default: NDS::GPU->WriteVRAM_LCDC<T>(addr, val); return;
     }
 }
 template <typename T>
@@ -1240,12 +1240,59 @@ T VRAMRead(u32 addr)
 {
     switch (addr & 0x00E00000)
     {
-    case 0x00000000: return GPU::ReadVRAM_ABG<T>(addr);
-    case 0x00200000: return GPU::ReadVRAM_BBG<T>(addr);
-    case 0x00400000: return GPU::ReadVRAM_AOBJ<T>(addr);
-    case 0x00600000: return GPU::ReadVRAM_BOBJ<T>(addr);
-    default: return GPU::ReadVRAM_LCDC<T>(addr);
+    case 0x00000000: return NDS::GPU->ReadVRAM_ABG<T>(addr);
+    case 0x00200000: return NDS::GPU->ReadVRAM_BBG<T>(addr);
+    case 0x00400000: return NDS::GPU->ReadVRAM_AOBJ<T>(addr);
+    case 0x00600000: return NDS::GPU->ReadVRAM_BOBJ<T>(addr);
+    default: return NDS::GPU->ReadVRAM_LCDC<T>(addr);
     }
+}
+
+static u8 GPU3D_Read8(u32 addr) noexcept
+{
+    return NDS::GPU->GPU3D.Read8(addr);
+}
+
+static u16 GPU3D_Read16(u32 addr) noexcept
+{
+    return NDS::GPU->GPU3D.Read16(addr);
+}
+
+static u32 GPU3D_Read32(u32 addr) noexcept
+{
+    return NDS::GPU->GPU3D.Read32(addr);
+}
+
+static void GPU3D_Write8(u32 addr, u8 val) noexcept
+{
+    NDS::GPU->GPU3D.Write8(addr, val);
+}
+
+static void GPU3D_Write16(u32 addr, u16 val) noexcept
+{
+    NDS::GPU->GPU3D.Write16(addr, val);
+}
+
+static void GPU3D_Write32(u32 addr, u32 val) noexcept
+{
+    NDS::GPU->GPU3D.Write32(addr, val);
+}
+
+template<class T>
+static T GPU_ReadVRAM_ARM7(u32 addr) noexcept
+{
+    return NDS::GPU->ReadVRAM_ARM7<T>(addr);
+}
+
+template<class T>
+static void GPU_WriteVRAM_ARM7(u32 addr, T val) noexcept
+{
+    NDS::GPU->WriteVRAM_ARM7<T>(addr, val);
+}
+
+u32 NDSCartSlot_ReadROMData()
+{ // TODO: Add a NDS* parameter, when NDS* is eventually implemented
+    return NDS::NDSCartSlot->ReadROMData();
 }
 
 void* GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size)
@@ -1256,7 +1303,7 @@ void* GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size)
         {
         case 0x04000000:
             if (!store && size == 32 && addr == 0x04100010 && NDS::ExMemCnt[0] & (1<<11))
-                return (void*)NDSCart::ReadROMData;
+                return (void*)NDSCartSlot_ReadROMData;
 
             /*
                 unfortunately we can't map GPU2D this way
@@ -1268,12 +1315,12 @@ void* GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size)
             {
                 switch (size | store)
                 {
-                case 8: return (void*)GPU3D::Read8;
-                case 9: return (void*)GPU3D::Write8;
-                case 16: return (void*)GPU3D::Read16;
-                case 17: return (void*)GPU3D::Write16;
-                case 32: return (void*)GPU3D::Read32;
-                case 33: return (void*)GPU3D::Write32;
+                case 8: return (void*)GPU3D_Read8;
+                case 9: return (void*)GPU3D_Write8;
+                case 16: return (void*)GPU3D_Read16;
+                case 17: return (void*)GPU3D_Write16;
+                case 32: return (void*)GPU3D_Read32;
+                case 33: return (void*)GPU3D_Write32;
                 }
             }
 
@@ -1358,7 +1405,8 @@ void* GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size)
                 }
             }
             break;
-        case 0x04800000:
+            // TODO: the wifi funcs also ought to check POWCNT
+        /*case 0x04800000:
             if (addr < 0x04810000 && size >= 16)
             {
                 switch (size | store)
@@ -1369,17 +1417,17 @@ void* GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size)
                 case 33: return (void*)WifiWrite32;
                 }
             }
-            break;
+            break;*/
         case 0x06000000:
         case 0x06800000:
             switch (size | store)
             {
-            case 8: return (void*)GPU::ReadVRAM_ARM7<u8>;
-            case 9: return (void*)GPU::WriteVRAM_ARM7<u8>;
-            case 16: return (void*)GPU::ReadVRAM_ARM7<u16>;
-            case 17: return (void*)GPU::WriteVRAM_ARM7<u16>;
-            case 32: return (void*)GPU::ReadVRAM_ARM7<u32>;
-            case 33: return (void*)GPU::WriteVRAM_ARM7<u32>;
+            case 8: return (void*)GPU_ReadVRAM_ARM7<u8>;
+            case 9: return (void*)GPU_WriteVRAM_ARM7<u8>;
+            case 16: return (void*)GPU_ReadVRAM_ARM7<u16>;
+            case 17: return (void*)GPU_WriteVRAM_ARM7<u16>;
+            case 32: return (void*)GPU_ReadVRAM_ARM7<u32>;
+            case 33: return (void*)GPU_WriteVRAM_ARM7<u32>;
             }
         }
     }

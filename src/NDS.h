@@ -19,12 +19,16 @@
 #ifndef NDS_H
 #define NDS_H
 
+#include <memory>
 #include <string>
+#include <memory>
 #include <functional>
 
 #include "Platform.h"
 #include "Savestate.h"
 #include "types.h"
+#include "NDSCart.h"
+#include "GBACart.h"
 
 // when touching the main loop/timing code, pls test a lot of shit
 // with this enabled, to make sure it doesn't desync
@@ -33,6 +37,14 @@
 class SPU;
 class SPIHost;
 class RTC;
+class Wifi;
+
+class AREngine;
+
+namespace Melon
+{
+class GPU;
+}
 
 namespace NDS
 {
@@ -253,6 +265,11 @@ extern u16 RCnt;
 extern class SPU* SPU;
 extern class SPIHost* SPI;
 extern class RTC* RTC;
+extern class Wifi* Wifi;
+extern std::unique_ptr<NDSCart::NDSCartSlot> NDSCartSlot;
+extern std::unique_ptr<GBACart::GBACartSlot> GBACartSlot;
+extern std::unique_ptr<Melon::GPU> GPU;
+extern class AREngine* AREngine;
 
 const u32 ARM7WRAMSize = 0x10000;
 extern u8* ARM7WRAM;
