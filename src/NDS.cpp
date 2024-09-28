@@ -104,6 +104,14 @@ u64 ARM9Timestamp, ARM9Target;
 u64 ARM7Timestamp, ARM7Target;
 u64 SysTimestamp;
 
+struct SchedEvent
+{
+    std::map<u32, EventFunc> Funcs;
+    u64 Timestamp;
+    u32 FuncID;
+    u32 Param;
+};
+
 SchedEvent SchedList[Event_MAX];
 u32 SchedListMask;
 
@@ -170,6 +178,9 @@ u32 KeyInput;
 u16 KeyCnt[2];
 u16 RCnt;
 
+SPIHost* SPI;
+class RTC* RTC;
+
 bool Running;
 
 bool RunningGame;
@@ -184,6 +195,9 @@ void SetGBASlotTimings();
 
 bool Init()
 {
+    RegisterEventFunc(Event_Div, 0, DivDone);
+    RegisterEventFunc(Event_Sqrt, 0, SqrtDone);
+
     ARM9 = new ARMv5();
     ARM7 = new ARMv4();
 
@@ -204,12 +218,13 @@ bool Init()
     DMAs[6] = new DMA(1, 2);
     DMAs[7] = new DMA(1, 3);
 
+    SPI = new SPIHost();
+    RTC = new class RTC();
+
     if (!NDSCart::Init()) return false;
     if (!GBACart::Init()) return false;
     if (!GPU::Init()) return false;
     if (!SPU::Init()) return false;
-    if (!SPI::Init()) return false;
-    if (!RTC::Init()) return false;
     if (!Wifi::Init()) return false;
 
     if (!DSi::Init()) return false;
@@ -237,17 +252,24 @@ void DeInit()
         DMAs[i] = nullptr;
     }
 
+    delete SPI;
+    SPI = nullptr;
+
+    delete RTC;
+    RTC = nullptr;
+
     NDSCart::DeInit();
     GBACart::DeInit();
     GPU::DeInit();
     SPU::DeInit();
-    SPI::DeInit();
-    RTC::DeInit();
     Wifi::DeInit();
 
     DSi::DeInit();
 
     AREngine::DeInit();
+
+    UnregisterEventFunc(Event_Div, 0);
+    UnregisterEventFunc(Event_Sqrt, 0);
 }
 
 
@@ -375,7 +397,7 @@ bool NeedsDirectBoot()
             return true;
 
         // DSi/3DS firmwares aren't bootable
-        if (!SPI_Firmware::GetFirmware()->IsBootable())
+        if (!SPI->GetFirmware()->IsBootable())
             return true;
 
         return false;
@@ -451,7 +473,7 @@ void SetupDirectBoot(const std::string& romname)
 
         ARM7BIOSProt = 0x1204;
 
-        SPI_Firmware::SetupDirectBoot(false);
+        SPI->GetFirmwareMem()->SetupDirectBoot(false);
 
         ARM9->CP15Write(0x100, 0x00012078);
         ARM9->CP15Write(0x200, 0x00000042);
@@ -608,7 +630,14 @@ void Reset()
     for (i = 0; i < 8; i++) DMAs[i]->Reset();
     memset(DMA9Fill, 0, 4*4);
 
-    memset(SchedList, 0, sizeof(SchedList));
+    for (i = 0; i < Event_MAX; i++)
+    {
+        SchedEvent& evt = SchedList[i];
+
+        evt.Timestamp = 0;
+        evt.FuncID = 0;
+        evt.Param = 0;
+    }
     SchedListMask = 0;
 
     KeyInput = 0x007F03FF;
@@ -620,8 +649,8 @@ void Reset()
     GBACart::Reset();
     GPU::Reset();
     SPU::Reset();
-    SPI::Reset();
-    RTC::Reset();
+    SPI->Reset();
+    RTC->Reset();
     Wifi::Reset();
 
     // TODO: move the SOUNDBIAS/degrade logic to SPU?
@@ -699,106 +728,6 @@ void Stop(Platform::StopReason reason)
         DSi::Stop();
 }
 
-bool DoSavestate_Scheduler(Savestate* file)
-{
-    // this is a bit of a hack
-    // but uh, your local coder realized that the scheduler list contains function pointers
-    // and that storing those as-is is not a very good idea
-    // unless you want it to crash and burn
-
-    // this is the solution your local coder came up with.
-    // it's gross but I think it's the best solution for this problem.
-    // just remember to add here if you add more event callbacks, kay?
-    // atleast until we come up with something more elegant.
-
-    void (*eventfuncs[])(u32) =
-    {
-        GPU::StartScanline, GPU::StartHBlank, GPU::FinishFrame,
-        SPU::Mix,
-        Wifi::USTimer,
-        RTC::ClockTimer,
-
-        GPU::DisplayFIFO,
-        NDSCart::ROMPrepareData, NDSCart::ROMEndTransfer,
-        NDSCart::SPITransferDone,
-        SPI::TransferDone,
-        DivDone,
-        SqrtDone,
-
-        DSi_SDHost::FinishRX,
-        DSi_SDHost::FinishTX,
-        DSi_NWifi::MSTimer,
-        DSi_CamModule::IRQ,
-        DSi_CamModule::TransferScanline,
-        DSi_DSP::DSPCatchUpU32,
-
-        nullptr
-    };
-
-    int len = Event_MAX;
-    if (file->Saving)
-    {
-        for (int i = 0; i < len; i++)
-        {
-            SchedEvent* evt = &SchedList[i];
-
-            u32 funcid = 0xFFFFFFFF;
-            if (evt->Func)
-            {
-                for (int j = 0; eventfuncs[j]; j++)
-                {
-                    if (evt->Func == eventfuncs[j])
-                    {
-                        funcid = j;
-                        break;
-                    }
-                }
-                if (funcid == 0xFFFFFFFF)
-                {
-                    Log(LogLevel::Error, "savestate: VERY BAD!!!!! FUNCTION POINTER FOR EVENT %d NOT IN HACKY LIST. CANNOT SAVE. SMACK ARISOTURA.\n", i);
-                    return false;
-                }
-            }
-
-            file->Var32(&funcid);
-            file->Var64(&evt->Timestamp);
-            file->Var32(&evt->Param);
-        }
-    }
-    else
-    {
-        for (int i = 0; i < len; i++)
-        {
-            SchedEvent* evt = &SchedList[i];
-
-            u32 funcid;
-            file->Var32(&funcid);
-
-            if (funcid != 0xFFFFFFFF)
-            {
-                for (int j = 0; ; j++)
-                {
-                    if (!eventfuncs[j])
-                    {
-                        Log(LogLevel::Error, "savestate: VERY BAD!!!!!! EVENT FUNCTION POINTER ID %d IS OUT OF RANGE. HAX?????\n", j);
-                        return false;
-                    }
-                    if (j == funcid) break;
-                }
-
-                evt->Func = eventfuncs[funcid];
-            }
-            else
-                evt->Func = nullptr;
-
-            file->Var64(&evt->Timestamp);
-            file->Var32(&evt->Param);
-        }
-    }
-
-    return true;
-}
-
 bool DoSavestate(Savestate* file)
 {
     file->Section("NDSG");
@@ -871,10 +800,13 @@ bool DoSavestate(Savestate* file)
 
     file->VarArray(DMA9Fill, 4*sizeof(u32));
 
-    if (!DoSavestate_Scheduler(file))
+    for (int i = 0; i < Event_MAX; i++)
     {
-        Platform::Log(Platform::LogLevel::Error, "savestate: failed to %s scheduler state\n", file->Saving ? "save" : "load");
-        return false;
+        SchedEvent& evt = SchedList[i];
+
+        file->Var64(&evt.Timestamp);
+        file->Var32(&evt.FuncID);
+        file->Var32(&evt.Param);
     }
     file->Var32(&SchedListMask);
     file->Var64(&ARM9Timestamp);
@@ -919,8 +851,8 @@ bool DoSavestate(Savestate* file)
         GBACart::DoSavestate(file);
     GPU::DoSavestate(file);
     SPU::DoSavestate(file);
-    SPI::DoSavestate(file);
-    RTC::DoSavestate(file);
+    SPI->DoSavestate(file);
+    RTC->DoSavestate(file);
     Wifi::DoSavestate(file);
 
     if (ConsoleType == 1)
@@ -1050,10 +982,14 @@ void RunSystem(u64 timestamp)
         if (!mask) break;
         if (mask & 0x1)
         {
-            if (SchedList[i].Timestamp <= SysTimestamp)
+            SchedEvent& evt = SchedList[i];
+
+            if (evt.Timestamp <= SysTimestamp)
             {
                 SchedListMask &= ~(1<<i);
-                SchedList[i].Func(SchedList[i].Param);
+
+                EventFunc func = evt.Funcs[evt.FuncID];
+                func(evt.Param);
             }
         }
 
@@ -1097,7 +1033,9 @@ void RunSystemSleep(u64 timestamp)
         {
             if (mask & 0x1)
             {
-                if (SchedList[i].Timestamp <= SysTimestamp)
+                SchedEvent& evt = SchedList[i];
+
+                if (evt.Timestamp <= SysTimestamp)
                 {
                     SchedListMask &= ~(1<<i);
 
@@ -1105,9 +1043,10 @@ void RunSystemSleep(u64 timestamp)
                     if (i == Event_SPU)
                         param = 1;
                     else
-                        param = SchedList[i].Param;
+                        param = evt.Param;
 
-                    SchedList[i].Func(param);
+                    EventFunc func = evt.Funcs[evt.FuncID];
+                    func(param);
                 }
             }
         }
@@ -1298,7 +1237,21 @@ void Reschedule(u64 target)
     }
 }
 
-void ScheduleEvent(u32 id, bool periodic, s32 delay, void (*func)(u32), u32 param)
+void RegisterEventFunc(u32 id, u32 funcid, EventFunc func)
+{
+    SchedEvent& evt = SchedList[id];
+
+    evt.Funcs[funcid] = func;
+}
+
+void UnregisterEventFunc(u32 id, u32 funcid)
+{
+    SchedEvent& evt = SchedList[id];
+
+    evt.Funcs.erase(funcid);
+}
+
+void ScheduleEvent(u32 id, bool periodic, s32 delay, u32 funcid, u32 param)
 {
     if (SchedListMask & (1<<id))
     {
@@ -1306,43 +1259,24 @@ void ScheduleEvent(u32 id, bool periodic, s32 delay, void (*func)(u32), u32 para
         return;
     }
 
-    SchedEvent* evt = &SchedList[id];
+    SchedEvent& evt = SchedList[id];
 
     if (periodic)
-        evt->Timestamp += delay;
+        evt.Timestamp += delay;
     else
     {
         if (CurCPU == 0)
-            evt->Timestamp = (ARM9Timestamp >> ARM9ClockShift) + delay;
+            evt.Timestamp = (ARM9Timestamp >> ARM9ClockShift) + delay;
         else
-            evt->Timestamp = ARM7Timestamp + delay;
+            evt.Timestamp = ARM7Timestamp + delay;
     }
 
-    evt->Func = func;
-    evt->Param = param;
+    evt.FuncID = funcid;
+    evt.Param = param;
 
     SchedListMask |= (1<<id);
 
-    Reschedule(evt->Timestamp);
-}
-
-void ScheduleEvent(u32 id, u64 timestamp, void (*func)(u32), u32 param)
-{
-    if (SchedListMask & (1<<id))
-    {
-        Log(LogLevel::Debug, "!! EVENT %d ALREADY SCHEDULED\n", id);
-        return;
-    }
-
-    SchedEvent* evt = &SchedList[id];
-
-    evt->Timestamp = timestamp;
-    evt->Func = func;
-    evt->Param = param;
-
-    SchedListMask |= (1<<id);
-
-    Reschedule(evt->Timestamp);
+    Reschedule(evt.Timestamp);
 }
 
 void CancelEvent(u32 id)
@@ -1353,28 +1287,12 @@ void CancelEvent(u32 id)
 
 void TouchScreen(u16 x, u16 y)
 {
-    if (ConsoleType == 1)
-    {
-        DSi_SPI_TSC::SetTouchCoords(x, y);
-    }
-    else
-    {
-        SPI_TSC::SetTouchCoords(x, y);
-        KeyInput &= ~(1 << (16+6));
-    }
+    SPI->GetTSC()->SetTouchCoords(x, y);
 }
 
 void ReleaseScreen()
 {
-    if (ConsoleType == 1)
-    {
-        DSi_SPI_TSC::SetTouchCoords(0x000, 0xFFF);
-    }
-    else
-    {
-        SPI_TSC::SetTouchCoords(0x000, 0xFFF);
-        KeyInput |= (1 << (16+6));
-    }
+    SPI->GetTSC()->SetTouchCoords(0x000, 0xFFF);
 }
 
 
@@ -1457,7 +1375,7 @@ void CamInputFrame(int cam, u32* data, int width, int height, bool rgb)
 
 void MicInputFrame(s16* data, int samples)
 {
-    return SPI_TSC::MicInputFrame(data, samples);
+    return SPI->GetTSC()->MicInputFrame(data, samples);
 }
 
 /*int ImportSRAM(u8* data, u32 length)
@@ -2096,7 +2014,7 @@ void StartDiv()
 {
     NDS::CancelEvent(NDS::Event_Div);
     DivCnt |= 0x8000;
-    NDS::ScheduleEvent(NDS::Event_Div, false, ((DivCnt&0x3)==0) ? 18:34, DivDone, 0);
+    NDS::ScheduleEvent(NDS::Event_Div, false, ((DivCnt&0x3)==0) ? 18:34, 0, 0);
 }
 
 // http://stackoverflow.com/questions/1100090/looking-for-an-efficient-integer-square-root-algorithm-for-arm-thumb2
@@ -2144,7 +2062,7 @@ void StartSqrt()
 {
     NDS::CancelEvent(NDS::Event_Sqrt);
     SqrtCnt |= 0x8000;
-    NDS::ScheduleEvent(NDS::Event_Sqrt, false, 13, SqrtDone, 0);
+    NDS::ScheduleEvent(NDS::Event_Sqrt, false, 13, 0, 0);
 }
 
 
@@ -3951,7 +3869,7 @@ u8 ARM7IORead8(u32 addr)
     case 0x04000136: return (KeyInput >> 16) & 0xFF;
     case 0x04000137: return KeyInput >> 24;
 
-    case 0x04000138: return RTC::Read() & 0xFF;
+    case 0x04000138: return RTC->Read() & 0xFF;
 
     case 0x040001A2:
         if (ExMemCnt[0] & (1<<11))
@@ -3991,7 +3909,7 @@ u8 ARM7IORead8(u32 addr)
             return NDSCart::ROMCommand[7];
         return 0;
 
-    case 0x040001C2: return SPI::ReadData();
+    case 0x040001C2: return SPI->ReadData();
 
     case 0x04000208: return IME[1];
 
@@ -4042,7 +3960,7 @@ u16 ARM7IORead16(u32 addr)
     case 0x04000134: return RCnt;
     case 0x04000136: return KeyInput >> 16;
 
-    case 0x04000138: return RTC::Read();
+    case 0x04000138: return RTC->Read();
 
     case 0x04000180: return IPCSync7;
     case 0x04000184:
@@ -4079,8 +3997,8 @@ u16 ARM7IORead16(u32 addr)
                   (NDSCart::ROMCommand[7] << 8);
         return 0;
 
-    case 0x040001C0: return SPI::Cnt;
-    case 0x040001C2: return SPI::ReadData();
+    case 0x040001C0: return SPI->ReadCnt();
+    case 0x040001C2: return SPI->ReadData();
 
     case 0x04000204: return ExMemCnt[1];
     case 0x04000206:
@@ -4132,7 +4050,7 @@ u32 ARM7IORead32(u32 addr)
 
     case 0x04000130: return (KeyInput & 0xFFFF) | (KeyCnt[1] << 16);
     case 0x04000134: return RCnt | (KeyInput & 0xFFFF0000);
-    case 0x04000138: return RTC::Read();
+    case 0x04000138: return RTC->Read();
 
     case 0x04000180: return IPCSync7;
     case 0x04000184: return ARM7IORead16(addr);
@@ -4162,7 +4080,7 @@ u32 ARM7IORead32(u32 addr)
         return 0;
 
     case 0x040001C0:
-        return SPI::Cnt | (SPI::ReadData() << 16);
+        return SPI->ReadCnt() | (SPI->ReadData() << 16);
 
     case 0x04000208: return IME[1];
     case 0x04000210: return IE[1];
@@ -4224,7 +4142,7 @@ void ARM7IOWrite8(u32 addr, u8 val)
         RCnt = (RCnt & 0x00FF) | (val << 8);
         return;
 
-    case 0x04000138: RTC::Write(val, true); return;
+    case 0x04000138: RTC->Write(val, true); return;
 
     case 0x04000188:
         ARM7IOWrite32(addr, val | (val << 8) | (val << 16) | (val << 24));
@@ -4255,7 +4173,7 @@ void ARM7IOWrite8(u32 addr, u8 val)
     case 0x040001AF: if (ExMemCnt[0] & (1<<11)) NDSCart::ROMCommand[7] = val; return;
 
     case 0x040001C2:
-        SPI::WriteData(val);
+        SPI->WriteData(val);
         return;
 
     case 0x04000208: IME[1] = val & 0x1; UpdateIRQ(1); return;
@@ -4312,7 +4230,7 @@ void ARM7IOWrite16(u32 addr, u16 val)
     case 0x04000132: KeyCnt[1] = val; return;
     case 0x04000134: RCnt = val; return;
 
-    case 0x04000138: RTC::Write(val, false); return;
+    case 0x04000138: RTC->Write(val, false); return;
 
     case 0x04000180:
         IPCSync9 &= 0xFFF0;
@@ -4383,10 +4301,10 @@ void ARM7IOWrite16(u32 addr, u16 val)
     case 0x040001BA: ROMSeed1[12] = val & 0x7F; return;
 
     case 0x040001C0:
-        SPI::WriteCnt(val);
+        SPI->WriteCnt(val);
         return;
     case 0x040001C2:
-        SPI::WriteData(val & 0xFF);
+        SPI->WriteData(val & 0xFF);
         return;
 
     case 0x04000204:
@@ -4480,7 +4398,7 @@ void ARM7IOWrite32(u32 addr, u32 val)
 
     case 0x04000130: KeyCnt[1] = val >> 16; return;
     case 0x04000134: RCnt = val & 0xFFFF; return;
-    case 0x04000138: RTC::Write(val & 0xFFFF, false); return;
+    case 0x04000138: RTC->Write(val & 0xFFFF, false); return;
 
     case 0x04000180:
     case 0x04000184:
@@ -4536,8 +4454,8 @@ void ARM7IOWrite32(u32 addr, u32 val)
     case 0x040001B4: *(u32*)&ROMSeed1[8] = val; return;
 
     case 0x040001C0:
-        SPI::WriteCnt(val & 0xFFFF);
-        SPI::WriteData((val >> 16) & 0xFF);
+        SPI->WriteCnt(val & 0xFFFF);
+        SPI->WriteData((val >> 16) & 0xFF);
         return;
 
     case 0x04000208: IME[1] = val & 0x1; UpdateIRQ(1); return;

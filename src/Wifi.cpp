@@ -150,6 +150,8 @@ u64 RXTimestamp;
 
 bool Init()
 {
+    NDS::RegisterEventFunc(NDS::Event_Wifi, 0, USTimer);
+
     //MPInited = false;
     //LANInited = false;
 
@@ -172,11 +174,12 @@ void DeInit()
         Platform::LAN_DeInit();
 
     WifiAP::DeInit();
+
+    NDS::UnregisterEventFunc(NDS::Event_Wifi, 0);
 }
 
 void Reset()
 {
-    using namespace SPI_Firmware;
     memset(RAM, 0, 0x2000);
     memset(IO, 0, 0x1000);
 
@@ -216,15 +219,17 @@ void Reset()
     }
     #undef BBREG_FIXED
 
-    RFVersion = GetFirmware()->Header().RFChipType;
+    const Firmware* fw = NDS::SPI->GetFirmware();
+
+    RFVersion = fw->GetHeader().RFChipType;
     memset(RFRegs, 0, 4*0x40);
 
-    FirmwareConsoleType console = GetFirmware()->Header().ConsoleType;
-    if (console == FirmwareConsoleType::DS)
+    Firmware::FirmwareConsoleType console = fw->GetHeader().ConsoleType;
+    if (console == Firmware::FirmwareConsoleType::DS)
         IOPORT(0x000) = 0x1440;
-    else if (console == FirmwareConsoleType::DSLite)
+    else if (console == Firmware::FirmwareConsoleType::DSLite)
         IOPORT(0x000) = 0xC340;
-    else if (NDS::ConsoleType == 1 && console == FirmwareConsoleType::DSi)
+    else if (NDS::ConsoleType == 1 && console == Firmware::FirmwareConsoleType::DSi)
         IOPORT(0x000) = 0xC340; // DSi has the modern DS-wifi variant
     else
     {
@@ -359,7 +364,7 @@ void ScheduleTimer(bool first)
     s32 delay = (cycles + 999999) / 1000000;
     TimerError = (delay * 1000000) - cycles;
 
-    NDS::ScheduleEvent(NDS::Event_Wifi, !first, delay, USTimer, 0);
+    NDS::ScheduleEvent(NDS::Event_Wifi, !first, delay, 0, 0);
 }
 
 void UpdatePowerOn()

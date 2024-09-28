@@ -20,6 +20,7 @@
 #define NDS_H
 
 #include <string>
+#include <functional>
 
 #include "Platform.h"
 #include "Savestate.h"
@@ -28,6 +29,9 @@
 // when touching the main loop/timing code, pls test a lot of shit
 // with this enabled, to make sure it doesn't desync
 //#define DEBUG_CHECK_DESYNC
+
+class SPIHost;
+class RTC;
 
 namespace NDS
 {
@@ -57,12 +61,8 @@ enum
     Event_MAX
 };
 
-struct SchedEvent
-{
-    void (*Func)(u32 param);
-    u64 Timestamp;
-    u32 Param;
-};
+typedef std::function<void(u32)> EventFunc;
+#define MemberEventFunc(cls,func) std::bind(&cls::func,this,std::placeholders::_1)
 
 enum
 {
@@ -249,6 +249,9 @@ extern MemRegion SWRAM_ARM7;
 extern u32 KeyInput;
 extern u16 RCnt;
 
+extern SPIHost* SPI;
+extern class RTC* RTC;
+
 const u32 ARM7WRAMSize = 0x10000;
 extern u8* ARM7WRAM;
 
@@ -297,8 +300,9 @@ void SetLidClosed(bool closed);
 void CamInputFrame(int cam, u32* data, int width, int height, bool rgb);
 void MicInputFrame(s16* data, int samples);
 
-void ScheduleEvent(u32 id, bool periodic, s32 delay, void (*func)(u32), u32 param);
-void ScheduleEvent(u32 id, u64 timestamp, void (*func)(u32), u32 param);
+void RegisterEventFunc(u32 id, u32 funcid, EventFunc func);
+void UnregisterEventFunc(u32 id, u32 funcid);
+void ScheduleEvent(u32 id, bool periodic, s32 delay, u32 funcid, u32 param);
 void CancelEvent(u32 id);
 
 void debug(u32 p);
