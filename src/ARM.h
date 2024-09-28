@@ -24,6 +24,7 @@
 
 #include "types.h"
 #include "MemRegion.h"
+#include "MemConstants.h"
 
 #ifdef GDBSTUB_ENABLED
 #include "debug/GdbStub.h"
@@ -41,9 +42,6 @@ enum
     RWFlags_Nonseq = (1<<5),
     RWFlags_ForceUser = (1<<21),
 };
-
-const u32 ITCMPhysicalSize = 0x8000;
-const u32 DTCMPhysicalSize = 0x4000;
 
 struct GDBArgs;
 class ARMJIT;
@@ -82,7 +80,7 @@ public:
     virtual void ExecuteJIT() = 0;
 #endif
 
-    bool CheckCondition(u32 code)
+    bool CheckCondition(u32 code) const
     {
         if (code == 0xE) return true;
         if (ConditionTable[code] & (1 << (CPSR>>28))) return true;
@@ -111,7 +109,7 @@ public:
         if (v) CPSR |= 0x10000000;
     }
 
-    inline bool ModeIs(u32 mode)
+    inline bool ModeIs(u32 mode) const
     {
         u32 cm = CPSR & 0x1f;
         mode &= 0x1f;
@@ -317,7 +315,7 @@ public:
     void ICacheInvalidateAll();
 
     void CP15Write(u32 id, u32 val);
-    u32 CP15Read(u32 id);
+    u32 CP15Read(u32 id) const;
 
     u32 CP15Control;
 

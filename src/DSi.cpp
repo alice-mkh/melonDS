@@ -17,6 +17,7 @@
 */
 
 #include <stdio.h>
+#include <assert.h>
 #include <string.h>
 #include <inttypes.h>
 #include "Args.h"
@@ -93,7 +94,7 @@ DSi::DSi(DSiArgs&& args) noexcept :
     // Memory is owned by ARMJIT_Memory, don't free it
     NWRAM_A = JIT.Memory.GetNWRAM_A();
     NWRAM_B = JIT.Memory.GetNWRAM_B();
-    NWRAM_C = NDS::JIT.Memory.GetNWRAM_C();
+    NWRAM_C = JIT.Memory.GetNWRAM_C();
 }
 
 DSi::~DSi() noexcept
@@ -180,7 +181,7 @@ std::unique_ptr<NDSCart::CartCommon> DSi::EjectCart()
     return oldcart;
 }
 
-void DSi::CamInputFrame(int cam, u32* data, int width, int height, bool rgb)
+void DSi::CamInputFrame(int cam, const u32* data, int width, int height, bool rgb)
 {
     switch (cam)
     {
@@ -276,7 +277,7 @@ void DSi::SetCartInserted(bool inserted)
         SCFG_MC |= 1;
 }
 
-void DSi::DecryptModcryptArea(u32 offset, u32 size, u8* iv)
+void DSi::DecryptModcryptArea(u32 offset, u32 size, const u8* iv)
 {
     AES_ctx ctx;
     u8 key[16];
@@ -956,21 +957,21 @@ void DSi::StallNDMAs()
 }
 
 
-bool DSi::DMAsInMode(u32 cpu, u32 mode)
+bool DSi::DMAsInMode(u32 cpu, u32 mode) const
 {
     if (NDS::DMAsInMode(cpu, mode)) return true;
 
     return NDMAsInMode(cpu, NDMAModes[mode]);
 }
 
-bool DSi::DMAsRunning(u32 cpu)
+bool DSi::DMAsRunning(u32 cpu) const
 {
     if (NDS::DMAsRunning(cpu)) return true;
 
     return NDMAsRunning(cpu);
 }
 
-bool DSi::NDMAsInMode(u32 cpu, u32 mode)
+bool DSi::NDMAsInMode(u32 cpu, u32 mode) const
 {
     cpu <<= 2;
     if (NDMAs[cpu+0].IsInMode(mode)) return true;
@@ -980,7 +981,7 @@ bool DSi::NDMAsInMode(u32 cpu, u32 mode)
     return false;
 }
 
-bool DSi::NDMAsRunning(u32 cpu)
+bool DSi::NDMAsRunning(u32 cpu) const
 {
     cpu <<= 2;
     if (NDMAs[cpu+0].IsRunning()) return true;

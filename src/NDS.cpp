@@ -94,7 +94,7 @@ NDS::NDS(NDSArgs&& args, int type) noexcept :
     ARM9BIOS(args.ARM9BIOS),
     JIT(*this, args.JIT),
     SPU(*this, args.BitDepth, args.Interpolation),
-    GPU(*this),
+    GPU(*this, std::move(args.Renderer3D)),
     SPI(*this, std::move(args.Firmware)),
     RTC(*this),
     Wifi(*this),
@@ -256,7 +256,7 @@ void NDS::InitTimings()
     // handled later: GBA slot, wifi
 }
 
-bool NDS::NeedsDirectBoot()
+bool NDS::NeedsDirectBoot() const
 {
     if (ConsoleType == 1)
     {
@@ -283,6 +283,13 @@ void NDS::SetupDirectBoot()
     u32 cartid = NDSCartSlot.GetCart()->ID();
     const u8* cartrom = NDSCartSlot.GetCart()->GetROM();
     MapSharedWRAM(3);
+
+    // Copy the Nintendo logo from the NDS ROM header to the ARM9 BIOS if using FreeBIOS
+    // Games need this for DS<->GBA comm to work
+    if (IsLoadedARM9BIOSBuiltIn())
+    {
+        memcpy(ARM9BIOS.data() + 0x20, header.NintendoLogo, 0x9C);
+    }
 
     // setup main RAM data
 
@@ -1145,7 +1152,7 @@ void NDS::SetKeyMask(u32 mask)
     CheckKeyIRQ(1, oldkey, KeyInput);
 }
 
-bool NDS::IsLidClosed()
+bool NDS::IsLidClosed() const
 {
     if (KeyInput & (1<<23)) return true;
     return false;
@@ -1315,7 +1322,7 @@ void NDS::SetIRQ(u32 cpu, u32 irq)
         {
             CPUStop &= ~CPUStop_Sleep;
             CPUStop |= CPUStop_Wakeup;
-            GPU.GPU3D.RestartFrame();
+            GPU.GPU3D.RestartFrame(GPU);
         }
     }
 }
@@ -1338,7 +1345,7 @@ void NDS::ClearIRQ2(u32 irq)
     UpdateIRQ(1);
 }
 
-bool NDS::HaltInterrupted(u32 cpu)
+bool NDS::HaltInterrupted(u32 cpu) const
 {
     if (cpu == 0)
     {
@@ -1409,7 +1416,7 @@ void NDS::EnterSleepMode()
     ARM7.Halt(2);
 }
 
-u32 NDS::GetPC(u32 cpu)
+u32 NDS::GetPC(u32 cpu) const
 {
     return cpu ? ARM7.R[15] : ARM9.R[15];
 }
@@ -1637,7 +1644,7 @@ void NDS::TimerStart(u32 id, u16 cnt)
 
 
 
-bool NDS::DMAsInMode(u32 cpu, u32 mode)
+bool NDS::DMAsInMode(u32 cpu, u32 mode) const
 {
     cpu <<= 2;
     if (DMAs[cpu+0].IsInMode(mode)) return true;
@@ -1648,7 +1655,7 @@ bool NDS::DMAsInMode(u32 cpu, u32 mode)
     return false;
 }
 
-bool NDS::DMAsRunning(u32 cpu)
+bool NDS::DMAsRunning(u32 cpu) const
 {
     cpu <<= 2;
     if (DMAs[cpu+0].IsRunning()) return true;
