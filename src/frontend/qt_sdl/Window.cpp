@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -312,6 +312,10 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actInsertGBAAddon[0] = submenu->addAction("Memory expansion");
             actInsertGBAAddon[0]->setData(QVariant(GBAAddon_RAMExpansion));
             connect(actInsertGBAAddon[0], &QAction::triggered, this, &MainWindow::onInsertGBAAddon);
+
+            actInsertGBAAddon[1] = submenu->addAction("Rumble Pak");
+            actInsertGBAAddon[1]->setData(QVariant(GBAAddon_RumblePak));
+            connect(actInsertGBAAddon[1], &QAction::triggered, this, &MainWindow::onInsertGBAAddon);
         }
 
         actEjectGBACart = menu->addAction("Eject cart");

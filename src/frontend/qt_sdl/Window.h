@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -258,7 +258,7 @@ public:
     QAction* actEjectCart;
     QAction* actCurrentGBACart;
     QAction* actInsertGBACart;
-    QAction* actInsertGBAAddon[1];
+    QAction* actInsertGBAAddon[2];
     QAction* actEjectGBACart;
     QAction* actImportSavefile;
     QAction* actSaveState[9];

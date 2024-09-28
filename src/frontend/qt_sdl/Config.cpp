@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -63,7 +63,7 @@ DefaultList<int> DefaultInts =
     {"Instance*.Firmware.BirthdayDay", 1},
     {"MP.AudioMode", 1},
     {"MP.RecvTimeout", 25},
-    {"Audio.Volume", 256},
+    {"Instance*.Audio.Volume", 256},
     {"Mic.InputType", 1},
     {"Mouse.HideSeconds", 5},
     {"Instance*.DSi.Battery.Level", 0xF},
@@ -99,6 +99,8 @@ DefaultList<bool> DefaultBools =
     {"LimitFPS", true},
     {"Window*.ShowOSD", true},
     {"Emu.DirectBoot", true},
+    {"Instance*.DS.Battery.LevelOkay", true},
+    {"Instance*.DSi.Battery.Charging", true},
 #ifdef JIT_ENABLED
     {"JIT.BranchOptimisations", true},
     {"JIT.LiteralOptimisations", true},
@@ -318,6 +320,42 @@ LegacyEntry LegacyFile[] =
 };
 
 
+static std::string GetDefaultKey(std::string path)
+{
+    std::string tables[] = {"Instance", "Window", "Camera"};
+
+    std::string ret = "";
+    int plen = path.length();
+    for (int i = 0; i < plen;)
+    {
+        bool found = false;
+
+        for (auto& tbl : tables)
+        {
+            int tlen = tbl.length();
+            if ((plen-i) <= tlen) continue;
+            if (path.substr(i, tlen) != tbl) continue;
+            if (path[i+tlen] < '0' || path[i+tlen] > '9') continue;
+
+            ret += tbl + "*";
+            i = path.find('.', i+tlen);
+            if (i == std::string::npos) return ret;
+
+            found = true;
+            break;
+        }
+
+        if (!found)
+        {
+            ret += path[i];
+            i++;
+        }
+    }
+
+    return ret;
+}
+
+
 Array::Array(toml::value& data) : Data(data)
 {
 }
@@ -484,8 +522,7 @@ int Table::GetInt(const std::string& path)
 
     int ret = (int)tval.as_integer();
 
-    std::regex rng_re("\\d+");
-    std::string rngkey = std::regex_replace(PathPrefix+path, rng_re, "*");
+    std::string rngkey = GetDefaultKey(PathPrefix+path);
     if (IntRanges.count(rngkey) != 0)
     {
         auto& range = IntRanges[rngkey];
@@ -524,8 +561,7 @@ std::string Table::GetString(const std::string& path)
 
 void Table::SetInt(const std::string& path, int val)
 {
-    std::regex rng_re("\\d+");
-    std::string rngkey = std::regex_replace(PathPrefix+path, rng_re, "*");
+    std::string rngkey = GetDefaultKey(PathPrefix+path);
     if (IntRanges.count(rngkey) != 0)
     {
         auto& range = IntRanges[rngkey];
@@ -571,8 +607,7 @@ toml::value& Table::ResolvePath(const std::string& path)
 
 template<typename T> T Table::FindDefault(const std::string& path, T def, DefaultList<T> list)
 {
-    std::regex def_re("\\d+");
-    std::string defkey = std::regex_replace(PathPrefix+path, def_re, "*");
+    std::string defkey = GetDefaultKey(PathPrefix+path);
 
     T ret = def;
     while (list.count(defkey) == 0)
@@ -604,7 +639,7 @@ bool LoadLegacyFile(int inst)
     }
 
     if (!f) return true;
-printf("PARSING LEGACY INI %d\n", inst);
+
     toml::value* root;// = GetLocalTable(inst);
     if (inst == -1)
         root = &RootTable;
@@ -629,16 +664,15 @@ printf("PARSING LEGACY INI %d\n", inst);
             {
                 if (!(entry->InstanceUnique ^ (inst == -1)))
                     break;
-printf("entry: %s -> %s, %d\n", entry->Name, entry->TOMLPath, entry->InstanceUnique);
+
                 std::string path = entry->TOMLPath;
                 toml::value* table = root;
                 size_t sep;
                 while ((sep = path.find('.')) != std::string::npos)
-                {printf("%s->", path.substr(0,sep).c_str());
+                {
                     table = &(*table)[path.substr(0, sep)];
                     path = path.substr(sep+1);
                 }
-                printf("%s\n", path.c_str());
 
                 int arrayid = -1;
                 if (path[path.size()-1] == ']')
@@ -647,7 +681,7 @@ printf("entry: %s -> %s, %d\n", entry->Name, entry->TOMLPath, entry->InstanceUni
                     arrayid = std::stoi(path.substr(tmp+1, path.size()-tmp-2));
                     path = path.substr(0, tmp);
                 }
-printf("path %s id %d\n", path.c_str(), arrayid);
+
                 toml::value& val = (*table)[path];
 
                 switch (entry->Type)
@@ -673,7 +707,6 @@ printf("path %s id %d\n", path.c_str(), arrayid);
                         while (val.size() < arrayid+1)
                             val.push_back("");
                         val[arrayid] = entryval;
-                        //val.push_back(entryval);
                         break;
                 }
 
@@ -715,27 +748,15 @@ bool Load()
         //RootTable = toml::table();
     }
 
-    //
-
     return true;
 }
 
 void Save()
 {
     auto cfgpath = Platform::GetLocalFilePath(kConfigFile);
-printf("save\n");
     if (!Platform::CheckFileWritable(cfgpath))
         return;
-    printf("zirz\n");
-    /*RootTable["test"] = 4444;
-    RootTable["teste.derp"] = 5555;
-    RootTable["testa"]["fazil"] = 6666;*/
-    //std::string derp = "sfsdf";
-    //toml::serializer<std::string> vorp(RootTable);
-    //toml::serializer<toml::string> zarp;
 
-    //std::cout << RootTable;
-    printf("blarg\n");
     std::ofstream file;
     file.open(cfgpath, std::ofstream::out | std::ofstream::trunc);
     file << RootTable;

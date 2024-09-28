@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -25,6 +25,7 @@
 #include "main.h"
 
 #include "Net.h"
+#include "Net_PCap.h"
 
 #include "WifiSettingsDialog.h"
 #include "ui_WifiSettingsDialog.h"
@@ -109,7 +110,10 @@ void WifiSettingsDialog::done(int r)
     }
 
     Net_PCap::DeInit();
-    Net::Init();
+    Config::Table cfg = Config::GetGlobalTable();
+    bool direct = cfg.GetBool("LAN.DirectMode");
+    std::string devicename = cfg.GetString("LAN.Device");
+    Net::Init(direct, devicename.c_str());
 
     QDialog::done(r);
 

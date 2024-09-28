@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -351,6 +351,14 @@ void Semaphore_Wait(Semaphore* sema)
     ((QSemaphore*) sema)->acquire();
 }
 
+bool Semaphore_TryWait(Semaphore* sema, int timeout_ms)
+{
+    if (!timeout_ms)
+        return ((QSemaphore*)sema)->tryAcquire(1);
+
+    return ((QSemaphore*)sema)->tryAcquire(1, timeout_ms);
+}
+
 void Semaphore_Post(Semaphore* sema, int count)
 {
     ((QSemaphore*) sema)->release(count);
@@ -404,6 +412,7 @@ void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen
 void WriteFirmware(const Firmware& firmware, u32 writeoffset, u32 writelen, void* userdata)
 {
     EmuInstance* inst = (EmuInstance*)userdata;
+    printf("saving firmware for instance %d\n", inst->getInstanceID());
     if (!inst->firmwareSave)
         return;
 
@@ -527,6 +536,16 @@ void Camera_Stop(int num, void* userdata)
 void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv, void* userdata)
 {
     return camManager[num]->captureFrame(frame, width, height, yuv);
+}
+
+void Addon_RumbleStart(u32 len, void* userdata)
+{
+    ((EmuInstance*)userdata)->inputRumbleStart(len);
+}
+
+void Addon_RumbleStop(void* userdata)
+{
+    ((EmuInstance*)userdata)->inputRumbleStop();
 }
 
 DynamicLibrary* DynamicLibrary_Load(const char* lib)

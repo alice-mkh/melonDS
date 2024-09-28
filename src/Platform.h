@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -256,6 +256,9 @@ Semaphore* Semaphore_Create();
 void Semaphore_Free(Semaphore* sema);
 void Semaphore_Reset(Semaphore* sema);
 void Semaphore_Wait(Semaphore* sema);
+/// Waits for the semaphore to be signaled, or until the timeout (in milliseconds) expires.
+/// If the timeout is 0, then don't wait; return immediately if the semaphore is not signaled.
+bool Semaphore_TryWait(Semaphore* sema, int timeout_ms = 0);
 void Semaphore_Post(Semaphore* sema, int count = 1);
 
 struct Mutex;
@@ -312,6 +315,17 @@ int Net_RecvPacket(u8* data, void* userdata);
 void Camera_Start(int num, void* userdata);
 void Camera_Stop(int num, void* userdata);
 void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv, void* userdata);
+
+// interface for addon inputs
+
+// Called by the DS Rumble Pak emulation to start the necessary
+// rumble effects on the connected game controller, if available.
+// @param len The duration of the controller rumble effect in milliseconds.
+void Addon_RumbleStart(u32 len, void* userdata);
+
+// Called by the DS Rumble Pak emulation to stop any necessary
+// rumble effects on the connected game controller, if available.
+void Addon_RumbleStop(void* userdata);
 
 struct DynamicLibrary;
 

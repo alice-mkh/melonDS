@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -274,7 +274,12 @@ int main(int argc, char** argv)
     }
 
     LocalMP::Init();
-    Net::Init();
+    {
+        Config::Table cfg = Config::GetGlobalTable();
+        bool direct = cfg.GetBool("LAN.DirectMode");
+        std::string devicename = cfg.GetString("LAN.Device");
+        Net::Init(direct, devicename.c_str());
+    }
 
     createEmuInstance();
 

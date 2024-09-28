@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -25,12 +25,7 @@
 #include <unordered_map>
 #include <tuple>
 
-#ifndef TOML11_VALUE_HPP
-namespace toml
-{
-class value;
-}
-#endif
+#include "toml/toml/value.hpp"
 
 namespace Config
 {

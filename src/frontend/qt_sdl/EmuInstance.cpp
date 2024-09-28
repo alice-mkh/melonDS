@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -68,6 +68,20 @@ EmuInstance::EmuInstance(int inst) : instanceID(inst),
     globalCfg(Config::GetGlobalTable()),
     localCfg(Config::GetLocalTable(inst))
 {
+    consoleType = globalCfg.GetInt("Emu.ConsoleType");
+
+    ndsSave = nullptr;
+    cartType = -1;
+    baseROMDir = "";
+    baseROMName = "";
+    baseAssetName = "";
+
+    gbaSave = nullptr;
+    gbaCartType = -1;
+    baseGBAROMDir = "";
+    baseGBAROMName = "";
+    baseGBAAssetName = "";
+
     cheatFile = nullptr;
     cheatsOn = localCfg.GetBool("EnableCheats");
 
@@ -78,7 +92,7 @@ EmuInstance::EmuInstance(int inst) : instanceID(inst),
     mpAudioMode = globalCfg.GetInt("MP.AudioMode");
 
     nds = nullptr;
-    updateConsole(nullptr, nullptr);
+    //updateConsole(nullptr, nullptr);
 
     audioInit();
     inputInit();
@@ -504,9 +518,9 @@ std::string EmuInstance::getEffectiveFirmwareSavePath()
 {
     if (!globalCfg.GetBool("Emu.ExternalBIOSEnable"))
     {
-        return kWifiSettingsPath;
+        return GetLocalFilePath(kWifiSettingsPath);
     }
-    if (nds->ConsoleType == 1)
+    if (consoleType == 1)
     {
         return globalCfg.GetString("DSi.FirmwarePath");
     }
@@ -520,7 +534,7 @@ std::string EmuInstance::getEffectiveFirmwareSavePath()
 // OR the path to the wi-fi settings.
 void EmuInstance::initFirmwareSaveManager() noexcept
 {
-    firmwareSave = std::make_unique<SaveManager>(getEffectiveFirmwareSavePath());
+    firmwareSave = std::make_unique<SaveManager>(getEffectiveFirmwareSavePath() + instanceFileSuffix());
 }
 
 std::string EmuInstance::getSavestateName(int slot)
@@ -1016,7 +1030,7 @@ ARCodeFile* EmuInstance::getCheatFile()
 
 void EmuInstance::setBatteryLevels()
 {
-    if (nds->ConsoleType == 1)
+    if (consoleType == 1)
     {
         auto dsi = static_cast<DSi*>(nds);
         dsi->I2C.GetBPTWL()->SetBatteryLevel(localCfg.GetInt("DSi.Battery.Level"));
@@ -1096,7 +1110,7 @@ bool EmuInstance::updateConsole(UpdateConsoleNDSArgs&& _ndsargs, UpdateConsoleGB
     };
     auto jitargs = jitopt.GetBool("Enable") ? std::make_optional(_jitargs) : std::nullopt;
 #else
-    optional<JITArsg> jitargs = std::nullopt;
+    optional<JITArgs> jitargs = std::nullopt;
 #endif
 
 #ifdef GDBSTUB_ENABLED
@@ -1177,6 +1191,7 @@ bool EmuInstance::updateConsole(UpdateConsoleNDSArgs&& _ndsargs, UpdateConsoleGB
         nds->SetARM9BIOS(*args->ARM9BIOS);
         nds->SetFirmware(std::move(args->Firmware));
         nds->SetNDSCart(std::move(args->NDSROM));
+        nds->SetGBACart(std::move(args->GBAROM));
         nds->SetJITArgs(args->JIT);
         // TODO GDB stub shit
         nds->SPU.SetInterpolation(args->Interpolation);
@@ -1204,9 +1219,11 @@ bool EmuInstance::updateConsole(UpdateConsoleNDSArgs&& _ndsargs, UpdateConsoleGB
 
 void EmuInstance::reset()
 {
+    consoleType = globalCfg.GetInt("Emu.ConsoleType");
+    
     updateConsole(Keep {}, Keep {});
 
-    if (nds->ConsoleType == 1) ejectGBACart();
+    if (consoleType == 1) ejectGBACart();
 
     nds->Reset();
     setBatteryLevels();
@@ -1237,14 +1254,14 @@ void EmuInstance::reset()
         string newsave;
         if (globalCfg.GetBool("Emu.ExternalBIOSEnable"))
         {
-            if (nds->ConsoleType == 1)
+            if (consoleType == 1)
                 newsave = globalCfg.GetString("DSi.FirmwarePath") + instanceFileSuffix();
             else
                 newsave = globalCfg.GetString("DS.FirmwarePath") + instanceFileSuffix();
         }
         else
         {
-            newsave = kWifiSettingsPath + instanceFileSuffix();
+            newsave = GetLocalFilePath(kWifiSettingsPath + instanceFileSuffix());
         }
 
         if (oldsave != newsave)
@@ -1381,7 +1398,7 @@ pair<unique_ptr<Firmware>, string> EmuInstance::generateDefaultFirmware()
 {
     // Construct the default firmware...
     string settingspath;
-    std::unique_ptr<Firmware> firmware = std::make_unique<Firmware>(nds->ConsoleType);
+    std::unique_ptr<Firmware> firmware = std::make_unique<Firmware>(consoleType);
     assert(firmware->Buffer() != nullptr);
 
     // Try to open the instanced Wi-fi settings, falling back to the regular Wi-fi settings if they don't exist.
@@ -1412,7 +1429,7 @@ pair<unique_ptr<Firmware>, string> EmuInstance::generateDefaultFirmware()
             Platform::Log(Platform::LogLevel::Warn, "Failed to read Wi-fi settings from \"%s\"; using defaults instead\n", wfcsettingspath.c_str());
 
             firmware->GetAccessPoints() = {
-                    Firmware::WifiAccessPoint(nds->ConsoleType),
+                    Firmware::WifiAccessPoint(consoleType),
                     Firmware::WifiAccessPoint(),
                     Firmware::WifiAccessPoint(),
             };
@@ -1789,7 +1806,7 @@ QString EmuInstance::cartLabel()
 
 bool EmuInstance::loadGBAROM(QStringList filepath)
 {
-    if (nds->ConsoleType == 1)
+    if (consoleType == 1)
     {
         QMessageBox::critical(mainWindow, "melonDS", "The DSi doesn't have a GBA slot.");
         return false;
@@ -1864,7 +1881,7 @@ bool EmuInstance::loadGBAROM(QStringList filepath)
 
 void EmuInstance::loadGBAAddon(int type)
 {
-    if (nds->ConsoleType == 1) return;
+    if (consoleType == 1) return;
 
     gbaSave = nullptr;
 
@@ -1895,7 +1912,7 @@ bool EmuInstance::gbaCartInserted()
 
 QString EmuInstance::gbaCartLabel()
 {
-    if (nds->ConsoleType == 1) return "none (DSi)";
+    if (consoleType == 1) return "none (DSi)";
 
     switch (gbaCartType)
     {

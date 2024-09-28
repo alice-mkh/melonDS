@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -78,6 +78,7 @@ public:
     ~EmuInstance();
 
     int getInstanceID() { return instanceID; }
+    int getConsoleType() { return consoleType; }
     EmuThread* getEmuThread() { return emuThread; }
     melonDS::NDS* getNDS() { return nds; }
 
@@ -126,6 +127,8 @@ public:
     void inputInit();
     void inputDeInit();
     void inputLoadConfig();
+    void inputRumbleStart(melonDS::u32 len_ms);
+    void inputRumbleStop();
 
     void setJoystick(int id);
     int getJoystickID() { return joystickID; }
@@ -225,6 +228,7 @@ private:
     Config::Table globalCfg;
     Config::Table localCfg;
 
+    int consoleType;
     melonDS::NDS* nds;
 
     int cartType;
@@ -289,6 +293,9 @@ private:
 
     int joystickID;
     SDL_Joystick* joystick;
+    SDL_GameController* controller;
+    bool hasRumble = false;
+    bool isRumbling = false;
 
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;

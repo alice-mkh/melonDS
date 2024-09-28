@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2023 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -751,7 +751,7 @@ void NDS::SetGBASave(const u8* savedata, u32 savelen)
 
 void NDS::LoadGBAAddon(int type)
 {
-    GBACartSlot.LoadAddon(type);
+    GBACartSlot.LoadAddon(UserData, type);
 }
 
 void NDS::LoadBIOS()
@@ -1541,7 +1541,7 @@ void NDS::NocashPrint(u32 ncpu, u32 addr)
     }
 
     output[ptr] = '\0';
-    Log(LogLevel::Debug, "%s", output);
+    Log(LogLevel::Debug, "%s\n", output);
 }
 
 void NDS::MonitorARM9Jump(u32 addr)
