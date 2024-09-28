@@ -88,7 +88,8 @@ static std::string GetModeString(FileMode mode, bool file_exists)
     return modeString;
 }
 
-FileHandle* OpenFile(const std::string& path, FileMode mode) {
+FileHandle* OpenFile(const std::string& path, FileMode mode)
+{
     g_autoptr (GFile) file = g_file_new_for_path (path.c_str ());
     gboolean file_exists = g_file_query_exists (file, NULL);
     std::string mode_string = GetModeString (mode, file_exists);
@@ -96,7 +97,8 @@ FileHandle* OpenFile(const std::string& path, FileMode mode) {
     return (FileHandle*) fopen (path.c_str (), mode_string.c_str ());
 }
 
-FileHandle* OpenLocalFile(const std::string& path, FileMode mode) {
+FileHandle* OpenLocalFile(const std::string& path, FileMode mode)
+{
     if (path == "shadercache") {
         const char *cache_path = melonds_core_get_cache_path ();
 

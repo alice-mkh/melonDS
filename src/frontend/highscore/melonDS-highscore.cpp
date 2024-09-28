@@ -27,6 +27,7 @@ struct _melonDSCore
   HsCore parent_instance;
 
   NDS *console;
+  char *rom_path;
   char *save_path;
 
   HsGLContext *gl_context;
@@ -157,6 +158,86 @@ get_proc_address (const char *name)
   return hs_gl_context_get_proc_address (self->gl_context, name);
 }
 
+static char *
+get_rom_basename (const char *rom_path)
+{
+  g_autoptr (GFile) rom = g_file_new_for_path (rom_path);
+  char *basename = g_file_get_basename (rom);
+  char *extension = strrchr (basename, '.');
+
+  *extension = '\0';
+
+  return basename;
+}
+
+static gboolean
+try_migrate_desmume_save (const char *rom_path, const char *save_path, GError **error)
+{
+  g_autoptr (GFile) save_dir = g_file_new_for_path (save_path);
+  if (!g_file_query_exists (save_dir, NULL)) {
+    // No save dir, exiting
+    return TRUE;
+  }
+
+  g_autoptr (GFile) dst_file = g_file_get_child (save_dir, "save.sav");
+  if (g_file_query_exists (dst_file, NULL)) {
+    // A raw save file already exists, exiting
+    return TRUE;
+  }
+
+  g_autoptr (GFile) save_dsv = g_file_get_child (save_dir, "save.dsv");
+
+  g_autofree char *basename = get_rom_basename (rom_path);
+  g_autofree char *basename_dsv_name = g_strconcat (basename, ".dsv", NULL);
+  g_autoptr (GFile) basename_dsv = g_file_get_child (save_dir, basename_dsv_name);
+
+  GFile *src_file;
+
+  if (g_file_query_exists (save_dsv, NULL)) {
+    src_file = save_dsv;
+  } else if (g_file_query_exists (basename_dsv, NULL)) {
+    src_file = basename_dsv;
+  } else {
+    // No desmume save files, exiting
+    return TRUE;
+  }
+
+  // Found both the source and destination file, migrating
+
+  g_autofree char *contents = NULL;
+  gsize contents_length;
+  if (!g_file_load_contents (src_file, NULL, &contents, &contents_length, NULL, error))
+    return FALSE;
+
+  // Let's do a few additional checks
+
+  if (contents_length < 0x7A) {
+    // Too short to be a desmume save file
+    return TRUE;
+  }
+
+  if (strncmp (&contents[contents_length - 0x10], "|-DESMUME SAVE-|", 0x10) != 0) {
+    // Doesn't have desmume header (footer?)
+    return TRUE;
+  }
+
+  // Writing a raw file
+  if (!g_file_replace_contents (dst_file, contents, contents_length - 0x7A, NULL, FALSE, G_FILE_CREATE_NONE, NULL, NULL, error))
+    return FALSE;
+
+  // Delete the desmume file
+  if (!g_file_delete (src_file, NULL, error))
+    return FALSE;
+
+  // Success
+  g_autofree char *message = g_strdup_printf ("Migrated '%s' to '%s'",
+                                              g_file_peek_path (src_file),
+                                              g_file_peek_path (dst_file));
+  hs_core_log (HS_CORE (core), HS_LOG_MESSAGE, message);
+
+  return TRUE;
+}
+
 static gboolean
 melonds_core_load_rom (HsCore      *core,
                        const char **rom_paths,
@@ -168,7 +249,14 @@ melonds_core_load_rom (HsCore      *core,
 
   g_assert (n_rom_paths == 1);
 
-  g_set_str (&self->save_path, save_path);
+  g_set_str (&self->rom_path, rom_paths[0]);
+
+  if (!try_migrate_desmume_save (self->rom_path, save_path, error))
+    return FALSE;
+
+  g_autoptr (GFile) save_dir = g_file_new_for_path (save_path);
+  if (!g_file_query_exists (save_dir, NULL) && !g_file_make_directory_with_parents (save_dir, NULL, error))
+    return FALSE;
 
   NDSArgs nds_args = {};
   self->console = new NDS (std::move (nds_args), self);
@@ -216,14 +304,16 @@ melonds_core_load_rom (HsCore      *core,
 
   g_autofree char *rom_data = NULL;
   gsize rom_length;
-  if (!g_file_get_contents (rom_paths[0], &rom_data, &rom_length, error))
+  if (!g_file_get_contents (self->rom_path, &rom_data, &rom_length, error))
     return FALSE;
 
+  g_autoptr (GFile) save_file = g_file_get_child (save_dir, "save.sav");
   g_autofree char *save_data = NULL;
   gsize save_length = 0;
-  g_autoptr (GFile) save_file = g_file_new_for_path (save_path);
-  if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
+  if (g_file_query_exists (save_file, NULL) && !g_file_load_contents (save_file, NULL, &save_data, &save_length, NULL, error))
     return FALSE;
+
+  g_set_str (&self->save_path, g_file_get_path (save_file));
 
   auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, self, std::nullopt);//std::move (cart_args));
   if (!cart) {
@@ -296,6 +386,7 @@ melonds_core_stop (HsCore *core)
 
   g_clear_object (&self->gl_context);
   g_clear_object (&self->context);
+  g_clear_pointer (&self->rom_path, g_free);
   g_clear_pointer (&self->save_path, g_free);
 }
 
@@ -361,13 +452,17 @@ melonds_core_reload_save (HsCore      *core,
 {
   melonDSCore *self = MELONDS_CORE (core);
 
-  g_set_str (&self->save_path, save_path);
+  if (!try_migrate_desmume_save (self->rom_path, save_path, error))
+    return FALSE;
 
   g_autofree char *save_data = NULL;
   gsize save_length = 0;
-  g_autoptr (GFile) save_file = g_file_new_for_path (save_path);
-  if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
+  g_autoptr (GFile) save_dir = g_file_new_for_path (save_path);
+  g_autoptr (GFile) save_file = g_file_get_child (save_dir, "save.sav");
+  if (g_file_query_exists (save_file, NULL) && !g_file_load_contents (save_file, NULL, &save_data, &save_length, NULL, error))
     return FALSE;
+
+  g_set_str (&self->save_path, g_file_get_path (save_file));
 
   self->console->GetNDSCart ()->SetSaveMemory ((const u8*) save_data, save_length);
 
