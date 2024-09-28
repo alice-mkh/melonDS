@@ -226,16 +226,14 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
 
   auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, self, std::nullopt);//std::move (cart_args));
-
-  cart->SetSaveMemory ((const u8*) save_data, save_length);
-
   if (!cart) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to parse ROM");
     return FALSE;
   }
 
-  self->console->SetNDSCart (std::move (cart));
+  cart->SetSaveMemory ((const u8*) save_data, save_length);
 
+  self->console->SetNDSCart (std::move (cart));
   self->console->Reset ();
 
   if (self->console->NeedsDirectBoot ())
