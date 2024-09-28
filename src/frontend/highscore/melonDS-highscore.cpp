@@ -170,9 +170,9 @@ load_bios (melonDSCore *self)
   memcpy (NDS::ARM9BIOS, bios_arm9_bin, sizeof (bios_arm9_bin));
   memcpy (NDS::ARM7BIOS, bios_arm7_bin, sizeof (bios_arm7_bin));
 
-  std::unique_ptr<SPI_Firmware::Firmware> firmware = std::make_unique<SPI_Firmware::Firmware>(0); // 1 for DSi
+  std::unique_ptr<Firmware> firmware = std::make_unique<Firmware>(0); // 1 for DSi
 
-  SPI_Firmware::InstallFirmware (std::move(firmware));
+  NDS::SPI->GetFirmwareMem ()->InstallFirmware (std::move (firmware));
 }
 
 static gboolean

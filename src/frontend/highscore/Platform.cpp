@@ -359,7 +359,7 @@ void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen
 {
 }
 
-void WriteFirmware(const SPI_Firmware::Firmware& firmware, u32 writeoffset, u32 writelen)
+void WriteFirmware(const Firmware& firmware, u32 writeoffset, u32 writelen)
 {
 }
 
