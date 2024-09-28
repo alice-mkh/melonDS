@@ -17,6 +17,7 @@
 #define SCREEN_WIDTH 256
 #define SCREEN_HEIGHT 192
 #define SAMPLE_RATE 32823.6328125
+#define MAX_SAMPLES 1500
 
 #define USE_COMPUTE 1
 
@@ -37,6 +38,8 @@ struct _melonDSCore
   GLuint program;
 
   HsSoftwareContext *context;
+
+  gint16 *audio_buffer;
 };
 
 static HsCore *core;
@@ -331,6 +334,8 @@ melonds_core_load_rom (HsCore      *core,
   if (self->gl_context)
     OpenGL::LoadShaderCache ();
 
+  self->audio_buffer = g_new0 (gint16, MAX_SAMPLES);
+
   return TRUE;
 }
 
@@ -387,6 +392,7 @@ melonds_core_stop (HsCore *core)
   g_clear_object (&self->context);
   g_clear_pointer (&self->rom_path, g_free);
   g_clear_pointer (&self->save_path, g_free);
+  g_clear_pointer (&self->audio_buffer, g_free);
 }
 
 const int BUTTON_MAPPING[] = {
@@ -426,10 +432,8 @@ melonds_core_run_frame (HsCore *core)
   self->console->RunFrame ();
 
   u32 n_samples = self->console->SPU.GetOutputSize ();
-  gint16 *samples = g_new0 (gint16, n_samples * 2);
-  self->console->SPU.ReadOutput (samples, n_samples);
-  hs_core_play_samples (core, samples, n_samples * 2);
-  g_free (samples);
+  self->console->SPU.ReadOutput (self->audio_buffer, n_samples);
+  hs_core_play_samples (core, self->audio_buffer, n_samples * 2);
 
   if (self->gl_context) {
     gl_draw_frame (self);
