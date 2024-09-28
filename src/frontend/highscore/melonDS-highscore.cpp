@@ -144,7 +144,7 @@ gl_draw_frame (melonDSCore *self)
   glUseProgram (self->program[2]);
   glActiveTexture (GL_TEXTURE0);
 
-  GPU::CurGLCompositor->BindOutputTexture (GPU::FrontBuffer);
+  NDS::GPU->CurGLCompositor->BindOutputTexture (NDS::GPU->FrontBuffer);
 
   glBindBuffer (GL_ARRAY_BUFFER, self->vertex_buffer);
   glBindVertexArray (self->vertex_array);
@@ -193,7 +193,7 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  GPU::RenderSettings vsettings;
+  Melon::RenderSettings vsettings;
 
 #if USE_GL
   self->context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
@@ -211,8 +211,8 @@ melonds_core_load_rom (HsCore      *core,
   vsettings.GL_ScaleFactor = 1;
   vsettings.GL_BetterPolygons = false;
 
-  GPU::InitRenderer (1); // GL
-  GPU::SetRenderSettings (1, vsettings);
+  NDS::GPU->InitRenderer (1); // GL
+  NDS::GPU->SetRenderSettings (1, vsettings);
 
   gl_init (self);
 #else
@@ -284,7 +284,7 @@ melonds_core_stop (HsCore *core)
   OpenGL::DeleteShaderProgram (self->program);
 #endif
 
-  GPU::DeInitRenderer ();
+  NDS::GPU->DeInitRenderer ();
   NDS::DeInit ();
 
   g_clear_object (&self->context);
