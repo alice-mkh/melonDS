@@ -413,6 +413,20 @@ void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv, v
 {
 }
 
+void Addon_RumbleStart(u32 len, void* userdata)
+{
+  HsCore *core = HS_CORE (userdata);
+
+  hs_core_rumble (core, 0, 1, 1, (u16) len);
+}
+
+void Addon_RumbleStop(void* userdata)
+{
+  HsCore *core = HS_CORE (userdata);
+
+  hs_core_rumble (core, 0, 0, 0, 0);
+}
+
 DynamicLibrary* DynamicLibrary_Load(const char* lib)
 {
     return nullptr;
