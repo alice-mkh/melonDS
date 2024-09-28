@@ -26,5 +26,10 @@ target_link_libraries(melonDS-highscore PRIVATE core)
 target_link_libraries(melonDS-highscore PRIVATE PkgConfig::highscore-1 PkgConfig::gobject-2.0)
 target_link_libraries(melonDS-highscore PRIVATE ${CMAKE_DL_LIBS})
 
+set(MELONDS_GL_HEADER \"frontend/glad/glad.h\" CACHE STRING "Path to a header that contains OpenGL function and type declarations.")
+
+target_compile_definitions(melonDS-highscore PUBLIC MELONDS_GL_HEADER=${MELONDS_GL_HEADER})
+target_compile_definitions(core PUBLIC MELONDS_GL_HEADER=${MELONDS_GL_HEADER})
+
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/melonDS.highscore DESTINATION ${CMAKE_INSTALL_LIBDIR}/highscore/cores)
 install(TARGETS melonDS-highscore LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/highscore/cores)
