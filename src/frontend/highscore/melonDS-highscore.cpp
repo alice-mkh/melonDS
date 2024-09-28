@@ -184,8 +184,9 @@ melonds_core_load_rom (HsCore      *core,
   g_assert (n_rom_paths == 1);
 
   g_set_str (&self->save_path, save_path);
-
-  self->console = new NDS ();
+ 
+  NDSArgs nds_args = {};
+  self->console = new NDS (std::move (nds_args), self);
   NDS::Current = self->console;
 
   if (!self->console) {
@@ -242,7 +243,7 @@ melonds_core_load_rom (HsCore      *core,
   if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
     return FALSE;
 
-  auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, std::nullopt);//std::move (cart_args));
+  auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, self, std::nullopt);//std::move (cart_args));
 
   cart->SetSaveMemory ((const u8*) save_data, save_length);
 

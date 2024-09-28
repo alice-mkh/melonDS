@@ -36,7 +36,7 @@ void DeInit()
 {
 }
 
-void SignalStop(StopReason reason)
+void SignalStop(StopReason reason, void* userdata)
 {
 }
 
@@ -322,7 +322,7 @@ void Sleep(u64 usecs)
     g_usleep (usecs);
 }
 
-void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen)
+void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
 {
     const char *save_path = melonds_core_get_save_path ();
     g_autoptr (GFile) save_file = g_file_new_for_path (save_path);
@@ -336,99 +336,80 @@ void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen
     }
 }
 
-void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen)
+void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
 {
 }
 
-void WriteFirmware(const Firmware& firmware, u32 writeoffset, u32 writelen)
+void WriteFirmware(const Firmware& firmware, u32 writeoffset, u32 writelen, void* userdata)
 {
 }
 
-void WriteDateTime(int year, int month, int day, int hour, int minute, int second)
+void WriteDateTime(int year, int month, int day, int hour, int minute, int second, void* userdata)
 {
 }
 
-bool MP_Init()
-{
-    return false;
-}
-
-void MP_DeInit()
+void MP_Begin(void* userdata)
 {
 }
 
-void MP_Begin()
+void MP_End(void* userdata)
 {
 }
 
-void MP_End()
-{
-}
-
-int MP_SendPacket(u8* data, int len, u64 timestamp)
+int MP_SendPacket(u8* data, int len, u64 timestamp, void* userdata)
 {
     return 0;
 }
 
-int MP_RecvPacket(u8* data, u64* timestamp)
+int MP_RecvPacket(u8* data, u64* timestamp, void* userdata)
 {
     return 0;
 }
 
-int MP_SendCmd(u8* data, int len, u64 timestamp)
+int MP_SendCmd(u8* data, int len, u64 timestamp, void* userdata)
 {
     return 0;
 }
 
-int MP_SendReply(u8* data, int len, u64 timestamp, u16 aid)
+int MP_SendReply(u8* data, int len, u64 timestamp, u16 aid, void* userdata)
 {
     return 0;
 }
 
-int MP_SendAck(u8* data, int len, u64 timestamp)
+int MP_SendAck(u8* data, int len, u64 timestamp, void* userdata)
 {
     return 0;
 }
 
-int MP_RecvHostPacket(u8* data, u64* timestamp)
+int MP_RecvHostPacket(u8* data, u64* timestamp, void* userdata)
 {
     return 0;
 }
 
-u16 MP_RecvReplies(u8* data, u64 timestamp, u16 aidmask)
+u16 MP_RecvReplies(u8* data, u64 timestamp, u16 aidmask, void* userdata)
 {
     return 0;
 }
 
-bool LAN_Init()
-{
-    return false;
-}
-
-void LAN_DeInit()
-{
-}
-
-int LAN_SendPacket(u8* data, int len)
+int Net_SendPacket(u8* data, int len, void* userdata)
 {
     return 0;
 }
 
-int LAN_RecvPacket(u8* data)
+int Net_RecvPacket(u8* data, void* userdata)
 {
     return 0;
 }
 
-
-void Camera_Start(int num)
+void Camera_Start(int num, void* userdata)
 {
 }
 
-void Camera_Stop(int num)
+void Camera_Stop(int num, void* userdata)
 {
 }
 
-void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv)
+void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv, void* userdata)
 {
 }
 
