@@ -17,6 +17,8 @@
 
 #define USE_GL 1
 
+using namespace melonDS;
+
 struct _melonDSCore
 {
   HsCore parent_instance;
@@ -193,7 +195,7 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  Melon::RenderSettings vsettings;
+  RenderSettings vsettings;
 
 #if USE_GL
   self->context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
