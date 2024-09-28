@@ -31,15 +31,14 @@ struct _melonDSCore
   char *save_path;
 
 #if USE_GL
-  HsGLContext *context;
+  HsGLContext *gl_context;
 
   GLuint vertex_buffer;
   GLuint vertex_array;
-  GLuint texture;
   GLuint program;
-#else
-  HsSoftwareContext *context;
 #endif
+
+  HsSoftwareContext *context;
 };
 
 static HsCore *core;
@@ -121,25 +120,16 @@ gl_init (melonDSCore *self)
   glVertexAttribPointer (0, 2, GL_FLOAT, GL_FALSE, 4*4, (void*)(0));
   glEnableVertexAttribArray (1); // texcoord
   glVertexAttribPointer (1, 2, GL_FLOAT, GL_FALSE, 4*4, (void*)(2*4));
-
-  glGenTextures (1, &self->texture);
-  glActiveTexture (GL_TEXTURE0);
-  glBindTexture (GL_TEXTURE_2D, self->texture);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT * 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 }
 
 static void
 gl_draw_frame (melonDSCore *self)
 {
   int front_buf = self->console->GPU.FrontBuffer;
-//  if (!self->console->GPU.Framebuffer[front_buf][0].get () || !self->console->GPU.Framebuffer[front_buf][1].get ())
-//    return;
+  if (!self->console->GPU.Framebuffer[front_buf][0].get () || !self->console->GPU.Framebuffer[front_buf][1].get ())
+    return;
 
-  glBindFramebuffer (GL_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->context));
+  glBindFramebuffer (GL_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->gl_context));
   glDisable (GL_DEPTH_TEST);
   glDepthMask (false);
   glDisable (GL_BLEND);
@@ -168,7 +158,7 @@ get_proc_address (const char *name)
 {
   melonDSCore *self = MELONDS_CORE (core);
 
-  return hs_gl_context_get_proc_address (self->context, name);
+  return hs_gl_context_get_proc_address (self->gl_context, name);
 }
 #endif
 
@@ -194,36 +184,41 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
+  gboolean needs_software_renderer = TRUE;
+
 #if USE_GL
-  self->context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
+  self->gl_context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
 
-  if (!hs_gl_context_realize (self->context, error))
-    return FALSE; // TODO fall back
-
-  hs_gl_context_set_size (self->context, SCREEN_WIDTH, SCREEN_HEIGHT * 2);
-
-  if (!gladLoadGLLoader (get_proc_address)) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load GL function for GLAD");
-    return FALSE;
-  }
+  if (hs_gl_context_realize (self->gl_context, NULL) && gladLoadGLLoader (get_proc_address)) {
+    hs_gl_context_set_size (self->gl_context, SCREEN_WIDTH, SCREEN_HEIGHT * 2);
 
 #if USE_COMPUTE
-  auto renderer = ComputeRenderer::New ();
-  renderer->SetRenderSettings (1, false);
+    auto renderer = ComputeRenderer::New ();
+    renderer->SetRenderSettings (1, true);
 #else
-  auto renderer = GLRenderer::New ();
-  renderer->SetRenderSettings (false, 1);
+    auto renderer = GLRenderer::New ();
+    renderer->SetRenderSettings (false, 1);
 #endif
 
-  self->console->GPU.SetRenderer3D (std::move (renderer));
+    self->console->GPU.SetRenderer3D (std::move (renderer));
 
-  gl_init (self);
-#else
-  self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_XRGB8888_REV);
+    gl_init (self);
 
-  auto renderer = std::make_unique<SoftRenderer> (true);
-  self->console->GPU.SetRenderer3D (std::move (renderer));
+    needs_software_renderer = FALSE;
+  } else {
+    hs_gl_context_unrealize (self->gl_context);
+    g_clear_object (&self->gl_context);
+
+    hs_core_log (core, HS_LOG_WARNING, "Failed to initialize GL context, falling back to software renderer");
+  }
 #endif
+
+  if (needs_software_renderer) {
+    self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_XRGB8888_REV);
+
+    auto renderer = std::make_unique<SoftRenderer> ();
+    self->console->GPU.SetRenderer3D (std::move (renderer));
+  }
 
   JITArgs jit_args = {
     32, true, true, true
@@ -303,17 +298,22 @@ melonds_core_stop (HsCore *core)
   self->console->Halt ();
   self->console->Stop ();
 
-#if USE_GL
-  glDeleteTextures (1, &self->texture);
-  glDeleteVertexArrays (1, &self->vertex_array);
-  glDeleteBuffers (1, &self->vertex_buffer);
-  glDeleteProgram (self->program);
-#endif
-
   delete self->console;
   self->console = NULL;
 
   NDS::Current = NULL;
+
+#if USE_GL
+  if (self->gl_context) {
+    glDeleteVertexArrays (1, &self->vertex_array);
+    glDeleteBuffers (1, &self->vertex_buffer);
+    glDeleteProgram (self->program);
+
+    hs_gl_context_unrealize (self->gl_context);
+  }
+
+  g_clear_object (&self->gl_context);
+#endif
 
   g_clear_object (&self->context);
   g_clear_pointer (&self->save_path, g_free);
@@ -370,15 +370,18 @@ melonds_core_run_frame (HsCore *core)
   g_free (samples);
 
 #if USE_GL
-  gl_draw_frame (self);
-  hs_gl_context_swap_buffers (self->context);
-#else
+  if (self->gl_context) {
+    gl_draw_frame (self);
+    hs_gl_context_swap_buffers (self->gl_context);
+    return;
+  }
+#endif
+
   size_t screen_size = (SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   u8 *vbuf0 = (u8*) hs_software_context_get_framebuffer (self->context);
   u8 *vbuf1 = vbuf0 + screen_size;
   memcpy (vbuf0, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][0].get (), screen_size);
   memcpy (vbuf1, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][1].get (), screen_size);
-#endif
 }
 
 static gboolean
