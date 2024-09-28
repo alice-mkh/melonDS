@@ -18,7 +18,6 @@
 #define SCREEN_HEIGHT 192
 #define SAMPLE_RATE 32823.6328125
 
-#define USE_GL 1
 #define USE_COMPUTE 1
 
 using namespace melonDS;
@@ -30,13 +29,11 @@ struct _melonDSCore
   NDS *console;
   char *save_path;
 
-#if USE_GL
   HsGLContext *gl_context;
 
   GLuint vertex_buffer;
   GLuint vertex_array;
   GLuint program;
-#endif
 
   HsSoftwareContext *context;
 };
@@ -48,7 +45,6 @@ static void melonds_nintendo_ds_core_init (HsNintendoDsCoreInterface *iface);
 G_DEFINE_FINAL_TYPE_WITH_CODE (melonDSCore, melonds_core, HS_TYPE_CORE,
                                G_IMPLEMENT_INTERFACE (HS_TYPE_NINTENDO_DS_CORE, melonds_nintendo_ds_core_init))
 
-#if USE_GL
 static const char *VERTEX_SHADER = R"(#version 140
 
 in vec2 vPosition;
@@ -160,7 +156,6 @@ get_proc_address (const char *name)
 
   return hs_gl_context_get_proc_address (self->gl_context, name);
 }
-#endif
 
 static gboolean
 melonds_core_load_rom (HsCore      *core,
@@ -184,9 +179,6 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  gboolean needs_software_renderer = TRUE;
-
-#if USE_GL
   self->gl_context = hs_core_create_gl_context (core, HS_GL_PROFILE_CORE, 3, 2, HS_GL_FLAGS_DEFAULT);
 
   if (hs_gl_context_realize (self->gl_context, NULL) && gladLoadGLLoader (get_proc_address)) {
@@ -203,17 +195,12 @@ melonds_core_load_rom (HsCore      *core,
     self->console->GPU.SetRenderer3D (std::move (renderer));
 
     gl_init (self);
-
-    needs_software_renderer = FALSE;
   } else {
     hs_gl_context_unrealize (self->gl_context);
     g_clear_object (&self->gl_context);
 
     hs_core_log (core, HS_LOG_WARNING, "Failed to initialize GL context, falling back to software renderer");
-  }
-#endif
 
-  if (needs_software_renderer) {
     self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_XRGB8888_REV);
 
     auto renderer = std::make_unique<SoftRenderer> ();
@@ -254,9 +241,8 @@ melonds_core_load_rom (HsCore      *core,
   if (self->console->NeedsDirectBoot ())
     self->console->SetupDirectBoot ("");
 
-#if USE_GL
-  OpenGL::LoadShaderCache ();
-#endif
+  if (self->gl_context)
+    OpenGL::LoadShaderCache ();
 
   return TRUE;
 }
@@ -291,9 +277,8 @@ melonds_core_stop (HsCore *core)
 {
   melonDSCore *self = MELONDS_CORE (core);
 
-#if USE_GL
-  OpenGL::SaveShaderCache ();
-#endif
+  if (self->gl_context)
+    OpenGL::SaveShaderCache ();
 
   self->console->Halt ();
   self->console->Stop ();
@@ -303,7 +288,6 @@ melonds_core_stop (HsCore *core)
 
   NDS::Current = NULL;
 
-#if USE_GL
   if (self->gl_context) {
     glDeleteVertexArrays (1, &self->vertex_array);
     glDeleteBuffers (1, &self->vertex_buffer);
@@ -313,8 +297,6 @@ melonds_core_stop (HsCore *core)
   }
 
   g_clear_object (&self->gl_context);
-#endif
-
   g_clear_object (&self->context);
   g_clear_pointer (&self->save_path, g_free);
 }
@@ -361,13 +343,11 @@ melonds_core_run_frame (HsCore *core)
   hs_core_play_samples (core, samples, n_samples * 2);
   g_free (samples);
 
-#if USE_GL
   if (self->gl_context) {
     gl_draw_frame (self);
     hs_gl_context_swap_buffers (self->gl_context);
     return;
   }
-#endif
 
   size_t screen_size = (SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   u8 *vbuf0 = (u8*) hs_software_context_get_framebuffer (self->context);
