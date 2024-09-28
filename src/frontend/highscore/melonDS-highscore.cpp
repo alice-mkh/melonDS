@@ -184,7 +184,7 @@ melonds_core_load_rom (HsCore      *core,
   g_assert (n_rom_paths == 1);
 
   g_set_str (&self->save_path, save_path);
- 
+
   NDSArgs nds_args = {};
   self->console = new NDS (std::move (nds_args), self);
   NDS::Current = self->console;
