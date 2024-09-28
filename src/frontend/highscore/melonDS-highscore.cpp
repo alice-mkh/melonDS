@@ -23,6 +23,7 @@ struct _melonDSCore
 {
   HsCore parent_instance;
 
+  NDS *console;
   char *save_path;
 
 #if USE_GL
@@ -52,19 +53,9 @@ in vec2 vTexcoord;
 
 smooth out vec2 fTexcoord;
 
-#define SCREEN_SIZE vec2(256, 384)
-
 void main()
 {
-  vec4 fpos;
-
-  fpos.xy = vPosition;
-
-  fpos.xy = ((fpos.xy * 2.0) / SCREEN_SIZE) - 1.0;
-  fpos.z = 0.0;
-  fpos.w = 1.0;
-
-  gl_Position = fpos;
+  gl_Position = vec4(vPosition * 2.0 - 1.0, 0.0, 1.0);
   fTexcoord = vTexcoord;
 }
 )";
@@ -100,13 +91,23 @@ gl_init (melonDSCore *self)
   glUseProgram (pid);
   glUniform1i (glGetUniformLocation (pid, "ScreenTex"), 0);
 
+  const int padded_height = SCREEN_HEIGHT * 2 + 2;
+  const float pad_pixels = 1.f / padded_height;
+
   const float vertices[] = {
-    0.f,   0.f,    0.f, 0.f,
-    0.f,   384.f,  0.f, 1.f,
-    256.f, 384.f,  1.f, 1.f,
-    0.f,   0.f,    0.f, 0.f,
-    256.f, 384.f,  1.f, 1.f,
-    256.f, 0.f,    1.f, 0.f,
+    0.f, 0.f,  0.f, 0.f,
+    0.f, 0.5f, 0.f, 0.5f - pad_pixels,
+    1.f, 0.5f, 1.f, 0.5f - pad_pixels,
+    0.f, 0.f,  0.f, 0.f,
+    1.f, 0.5f, 1.f, 0.5f - pad_pixels,
+    1.f, 0.f,  1.f, 0.f,
+
+    0.f, 0.5f, 0.f, 0.5f + pad_pixels,
+    0.f, 1.f,  0.f, 1.f,
+    1.f, 1.f,  1.f, 1.f,
+    0.f, 0.5f, 0.f, 0.5f + pad_pixels,
+    1.f, 1.f,  1.f, 1.f,
+    1.f, 0.5f, 1.f, 0.5f + pad_pixels,
   };
 
   glGenBuffers (1, &self->vertex_buffer);
@@ -133,6 +134,10 @@ gl_init (melonDSCore *self)
 static void
 gl_draw_frame (melonDSCore *self)
 {
+  int front_buf = self->console->GPU.FrontBuffer;
+//  if (!self->console->GPU.Framebuffer[front_buf][0] || !self->console->GPU.Framebuffer[front_buf][1])
+//    return;
+
   glBindFramebuffer (GL_FRAMEBUFFER, hs_gl_context_get_default_framebuffer (self->context));
   glDisable (GL_DEPTH_TEST);
   glDepthMask (false);
@@ -146,12 +151,12 @@ gl_draw_frame (melonDSCore *self)
   glUseProgram (self->program[2]);
   glActiveTexture (GL_TEXTURE0);
 
-  NDS::GPU->CurGLCompositor->BindOutputTexture (NDS::GPU->FrontBuffer);
+  self->console->GPU.CurGLCompositor->BindOutputTexture (front_buf);
 
   glBindBuffer (GL_ARRAY_BUFFER, self->vertex_buffer);
   glBindVertexArray (self->vertex_array);
 
-  glDrawArrays (GL_TRIANGLES, 0, 6);
+  glDrawArrays (GL_TRIANGLES, 0, 12);
 
   glBindBuffer (GL_PIXEL_PACK_BUFFER, 0);
   glBindFramebuffer (GL_FRAMEBUFFER, 0);
@@ -169,12 +174,12 @@ get_proc_address (const char *name)
 static void
 load_bios (melonDSCore *self)
 {
-  memcpy (NDS::ARM9BIOS, bios_arm9_bin, sizeof (bios_arm9_bin));
-  memcpy (NDS::ARM7BIOS, bios_arm7_bin, sizeof (bios_arm7_bin));
+  memcpy (self->console->ARM9BIOS, bios_arm9_bin, sizeof (bios_arm9_bin));
+  memcpy (self->console->ARM7BIOS, bios_arm7_bin, sizeof (bios_arm7_bin));
 
   std::unique_ptr<Firmware> firmware = std::make_unique<Firmware>(0); // 1 for DSi
 
-  NDS::SPI->GetFirmwareMem ()->InstallFirmware (std::move (firmware));
+  self->console->SPI.GetFirmwareMem ()->InstallFirmware (std::move (firmware));
 }
 
 static gboolean
@@ -190,8 +195,11 @@ melonds_core_load_rom (HsCore      *core,
 
   g_set_str (&self->save_path, save_path);
 
-  if (!NDS::Init ()) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to init core");
+  self->console = new NDS ();
+  NDS::Current = self->console;
+
+  if (!self->console) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to init the console");
     return FALSE;
   }
 
@@ -213,8 +221,8 @@ melonds_core_load_rom (HsCore      *core,
   vsettings.GL_ScaleFactor = 1;
   vsettings.GL_BetterPolygons = false;
 
-  NDS::GPU->InitRenderer (1); // GL
-  NDS::GPU->SetRenderSettings (1, vsettings);
+  self->console->GPU.InitRenderer (1); // GL
+  self->console->GPU.SetRenderSettings (1, vsettings);
 
   gl_init (self);
 #else
@@ -222,12 +230,11 @@ melonds_core_load_rom (HsCore      *core,
 
   vsettings.Soft_Threaded = false;
 
-  GPU::InitRenderer (0); // Software
-  GPU::SetRenderSettings (0, vsettings);
+  self->console->GPU.InitRenderer (0); // Software
+  self->console->GPU.SetRenderSettings (0, vsettings);
 #endif
 
-  NDS::SPU->SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
-  NDS::SetConsoleType (0); // 0: DS, 1: DSi
+  self->console->SPU.SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
 
   load_bios (self);
 
@@ -242,15 +249,15 @@ melonds_core_load_rom (HsCore      *core,
   if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
     return FALSE;
 
-  if (!NDS::LoadCart ((const u8*) rom_data, rom_length, (const u8*) save_data, save_length)) {
+  if (!self->console->LoadCart ((const u8*) rom_data, rom_length, (const u8*) save_data, save_length)) {
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load ROM");
     return FALSE;
   }
 
-  NDS::Reset();
+  self->console->Reset ();
 
-  if (NDS::NeedsDirectBoot())
-    NDS::SetupDirectBoot ("");
+  if (self->console->NeedsDirectBoot ())
+    self->console->SetupDirectBoot ("");
 
   return TRUE;
 }
@@ -258,16 +265,20 @@ melonds_core_load_rom (HsCore      *core,
 static void
 melonds_core_start (HsCore *core)
 {
-  NDS::Start ();
+  melonDSCore *self = MELONDS_CORE (core);
+
+  self->console->Start ();
 }
 
 static void
 melonds_core_reset (HsCore *core)
 {
-  NDS::Reset ();
+  melonDSCore *self = MELONDS_CORE (core);
 
-  if (NDS::NeedsDirectBoot())
-    NDS::SetupDirectBoot ("");
+  self->console->Reset ();
+
+  if (self->console->NeedsDirectBoot ())
+    self->console->SetupDirectBoot ("");
 }
 
 static void
@@ -275,8 +286,8 @@ melonds_core_stop (HsCore *core)
 {
   melonDSCore *self = MELONDS_CORE (core);
 
-  NDS::Halt ();
-  NDS::Stop ();
+  self->console->Halt ();
+  self->console->Stop ();
 
 #if USE_GL
   glDeleteTextures (1, &self->texture);
@@ -286,8 +297,10 @@ melonds_core_stop (HsCore *core)
   OpenGL::DeleteShaderProgram (self->program);
 #endif
 
-  NDS::GPU->DeInitRenderer ();
-  NDS::DeInit ();
+  delete self->console;
+  self->console = NULL;
+
+  NDS::Current = NULL;
 
   g_clear_object (&self->context);
   g_clear_pointer (&self->save_path, g_free);
@@ -311,6 +324,7 @@ const int BUTTON_MAPPING[] = {
 static void
 melonds_core_poll_input (HsCore *core, HsInputState *input_state)
 {
+  melonDSCore *self = MELONDS_CORE (core);
   u32 mask = 0xfff;
 
   for (int btn = 0; btn < HS_NINTENDO_DS_N_BUTTONS; btn++) {
@@ -318,14 +332,14 @@ melonds_core_poll_input (HsCore *core, HsInputState *input_state)
       mask &= ~(1 << BUTTON_MAPPING[btn]);
   }
 
-  NDS::SetKeyMask (mask);
+  self->console->SetKeyMask (mask);
 
   if (input_state->nintendo_ds.touch_pressed) {
     u16 x = (u16) round (input_state->nintendo_ds.touch_x * SCREEN_WIDTH);
     u16 y = (u16) round (input_state->nintendo_ds.touch_y * SCREEN_HEIGHT);
-    NDS::TouchScreen (x, y);
+    self->console->TouchScreen (x, y);
   } else {
-    NDS::ReleaseScreen ();
+    self->console->ReleaseScreen ();
   }
 }
 
@@ -334,11 +348,11 @@ melonds_core_run_frame (HsCore *core)
 {
   melonDSCore *self = MELONDS_CORE (core);
 
-  NDS::RunFrame ();
+  self->console->RunFrame ();
 
-  u32 n_samples = NDS::SPU->GetOutputSize ();
+  u32 n_samples = self->console->SPU.GetOutputSize ();
   gint16 *samples = g_new0 (gint16, n_samples * 2);
-  NDS::SPU->ReadOutput (samples, n_samples);
+  self->console->SPU.ReadOutput (samples, n_samples);
   hs_core_play_samples (core, samples, n_samples * 2);
   g_free (samples);
 
@@ -349,8 +363,8 @@ melonds_core_run_frame (HsCore *core)
   size_t screen_size = (SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   u8 *vbuf0 = (u8*) hs_software_context_get_framebuffer (self->context);
   u8 *vbuf1 = vbuf0 + screen_size;
-  memcpy (vbuf0, GPU::Framebuffer[GPU::FrontBuffer][0], screen_size);
-  memcpy (vbuf1, GPU::Framebuffer[GPU::FrontBuffer][1], screen_size);
+  memcpy (vbuf0, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][0], screen_size);
+  memcpy (vbuf1, self->console->GPU.Framebuffer[self->console->GPU.FrontBuffer][1], screen_size);
 #endif
 }
 
@@ -369,7 +383,7 @@ melonds_core_reload_save (HsCore      *core,
   if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
     return FALSE;
 
-  NDS::LoadSave ((const u8*) save_data, save_length);
+  self->console->LoadSave ((const u8*) save_data, save_length);
 
   return TRUE;
 }
@@ -379,6 +393,7 @@ melonds_core_load_state (HsCore          *core,
                          const char      *path,
                          HsStateCallback  callback)
 {
+  melonDSCore *self = MELONDS_CORE (core);
   g_autofree char *data = NULL;
   gsize length;
   GError *error = NULL;
@@ -390,7 +405,7 @@ melonds_core_load_state (HsCore          *core,
 
   Savestate *state = new Savestate (data, length, false);
 
-  if (!NDS::DoSavestate (state) || state->Error) {
+  if (!self->console->DoSavestate (state) || state->Error) {
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load state");
     callback (core, &error);
     return;
@@ -405,12 +420,13 @@ melonds_core_save_state (HsCore          *core,
                          const char      *path,
                          HsStateCallback  callback)
 {
+  melonDSCore *self = MELONDS_CORE (core);
   g_autoptr (GFile) file = g_file_new_for_path (path);
   GError *error = NULL;
 
   Savestate state (Savestate::DEFAULT_SIZE);
 
-  if (!NDS::DoSavestate (&state) || state.Error) {
+  if (!self->console->DoSavestate (&state) || state.Error) {
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to save state");
     callback (core, &error);
     return;
