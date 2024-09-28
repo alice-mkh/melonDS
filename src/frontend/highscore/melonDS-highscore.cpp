@@ -207,7 +207,7 @@ melonds_core_load_rom (HsCore      *core,
     return FALSE;
   }
 
-  auto renderer = GLRenderer::New (self->console->GPU);
+  auto renderer = GLRenderer::New ();
   renderer->SetRenderSettings (false, 1);
   self->console->GPU.SetRenderer3D (std::move (renderer));
 
@@ -215,7 +215,7 @@ melonds_core_load_rom (HsCore      *core,
 #else
   self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_XRGB8888_REV);
 
-  auto renderer = std::make_unique<SoftRenderer> (self->console->GPU, true);
+  auto renderer = std::make_unique<SoftRenderer> (true);
   self->console->GPU.SetRenderer3D (std::move (renderer));
 #endif
 
