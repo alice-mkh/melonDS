@@ -219,7 +219,12 @@ melonds_core_load_rom (HsCore      *core,
   self->console->GPU.SetRenderer3D (std::move (renderer));
 #endif
 
-  self->console->SPU.SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
+  JITArgs jit_args = {
+    32, true, true, true
+  };
+
+  self->console->SetJITArgs (jit_args);
+  self->console->SPU.SetInterpolation (AudioInterpolation::None);
 
   g_autofree char *rom_data = NULL;
   gsize rom_length;

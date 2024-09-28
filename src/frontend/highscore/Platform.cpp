@@ -50,46 +50,6 @@ std::string InstanceFileSuffix()
     return "";
 }
 
-int GetConfigInt(ConfigEntry entry)
-{
-    switch (entry)
-    {
-#ifdef JIT_ENABLED
-    case JIT_MaxBlockSize: return 32;
-#endif
-
-    case AudioBitDepth: return 2;
-    }
-
-    return 0;
-}
-
-bool GetConfigBool(ConfigEntry entry)
-{
-    switch (entry)
-    {
-#ifdef JIT_ENABLED
-    case JIT_Enable: return true;
-    case JIT_LiteralOptimizations: true;
-    case JIT_BranchOptimizations: true;
-    case JIT_FastMemory: return true;
-#endif
-    case ExternalBIOSEnable: return false;
-    }
-
-    return false;
-}
-
-std::string GetConfigString(ConfigEntry entry)
-{
-    return "";
-}
-
-bool GetConfigArray(ConfigEntry entry, void* data)
-{
-    return false;
-}
-
 constexpr char AccessMode(FileMode mode, bool file_exists)
 {
     if (!(mode & FileMode::Write))
