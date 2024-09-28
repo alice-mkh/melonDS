@@ -173,17 +173,6 @@ get_proc_address (const char *name)
 }
 #endif
 
-static void
-load_bios (melonDSCore *self)
-{
-  memcpy (self->console->ARM9BIOS, bios_arm9_bin, sizeof (bios_arm9_bin));
-  memcpy (self->console->ARM7BIOS, bios_arm7_bin, sizeof (bios_arm7_bin));
-
-  std::unique_ptr<Firmware> firmware = std::make_unique<Firmware>(0); // 1 for DSi
-
-  self->console->SPI.GetFirmwareMem ()->InstallFirmware (std::move (firmware));
-}
-
 static gboolean
 melonds_core_load_rom (HsCore      *core,
                        const char **rom_paths,
@@ -232,8 +221,6 @@ melonds_core_load_rom (HsCore      *core,
 
   self->console->SPU.SetInterpolation (0); // 0: none, 1: linear, 2: cosine, 3: cubic
 
-  load_bios (self);
-
   g_autofree char *rom_data = NULL;
   gsize rom_length;
   if (!g_file_get_contents (rom_paths[0], &rom_data, &rom_length, error))
@@ -245,10 +232,16 @@ melonds_core_load_rom (HsCore      *core,
   if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
     return FALSE;
 
-  if (!self->console->LoadCart ((const u8*) rom_data, rom_length, (const u8*) save_data, save_length)) {
-    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load ROM");
+  auto cart = NDSCart::ParseROM ((const u8*) rom_data, rom_length, std::nullopt);//std::move (cart_args));
+
+  cart->SetSaveMemory ((const u8*) save_data, save_length);
+
+  if (!cart) {
+    g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to parse ROM");
     return FALSE;
   }
+
+  self->console->SetNDSCart (std::move (cart));
 
   self->console->Reset ();
 
@@ -379,7 +372,7 @@ melonds_core_reload_save (HsCore      *core,
   if (g_file_query_exists (save_file, NULL) && !g_file_get_contents (save_path, &save_data, &save_length, error))
     return FALSE;
 
-  self->console->LoadSave ((const u8*) save_data, save_length);
+  self->console->GetNDSCart ()->SetSaveMemory ((const u8*) save_data, save_length);
 
   return TRUE;
 }
