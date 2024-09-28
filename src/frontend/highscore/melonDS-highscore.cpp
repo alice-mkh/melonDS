@@ -255,8 +255,8 @@ melonds_core_start (HsCore *core)
   int current_shader, shaders_count;
 
   do {
-    self->console->GPU.GetRenderer3D().ShaderCompileStep (current_shader, shaders_count);
-  } while (self->console->GPU.GetRenderer3D().NeedsShaderCompile ());
+    self->console->GPU.GetRenderer3D ().ShaderCompileStep (current_shader, shaders_count);
+  } while (self->console->GPU.GetRenderer3D ().NeedsShaderCompile ());
 }
 
 static void
