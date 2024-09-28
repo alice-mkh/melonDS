@@ -39,6 +39,7 @@
 #include <QMimeData>
 #include <QVector>
 #include <QCommandLineParser>
+#include <QDesktopServices>
 #ifndef _WIN32
 #include <QGuiApplication>
 #include <QSocketNotifier>
@@ -72,7 +73,8 @@
 #include "Config.h"
 #include "version.h"
 #include "Savestate.h"
-#include "LocalMP.h"
+#include "MPInterface.h"
+#include "LANDialog.h"
 
 //#include "main_shaders.h"
 
@@ -366,6 +368,12 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         connect(actUndoStateLoad, &QAction::triggered, this, &MainWindow::onUndoStateLoad);
 
         menu->addSeparator();
+        actOpenConfig = menu->addAction("Open melonDS directory");
+        connect(actOpenConfig, &QAction::triggered, this, [&]() {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(emuDirectory));
+        });
+
+        menu->addSeparator();
 
         actQuit = menu->addAction("Quit");
         connect(actQuit, &QAction::triggered, this, &MainWindow::onQuit);
@@ -424,6 +432,25 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
             actMPNewInstance = submenu->addAction("Launch new instance");
             connect(actMPNewInstance, &QAction::triggered, this, &MainWindow::onMPNewInstance);
+
+            submenu->addSeparator();
+
+            actLANStartHost = submenu->addAction("Host LAN game");
+            connect(actLANStartHost, &QAction::triggered, this, &MainWindow::onLANStartHost);
+
+            actLANStartClient = submenu->addAction("Join LAN game");
+            connect(actLANStartClient, &QAction::triggered, this, &MainWindow::onLANStartClient);
+
+            /*submenu->addSeparator();
+
+            actNPStartHost = submenu->addAction("NETPLAY HOST");
+            connect(actNPStartHost, &QAction::triggered, this, &MainWindow::onNPStartHost);
+
+            actNPStartClient = submenu->addAction("NETPLAY CLIENT");
+            connect(actNPStartClient, &QAction::triggered, this, &MainWindow::onNPStartClient);
+
+            actNPTest = submenu->addAction("NETPLAY GO");
+            connect(actNPTest, &QAction::triggered, this, &MainWindow::onNPTest);*/
         }
     }
     {
@@ -729,6 +756,8 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     QObject::connect(qApp, &QApplication::applicationStateChanged, this, &MainWindow::onAppStateChanged);
     onUpdateInterfaceSettings();
+
+    updateMPInterface(MPInterface::GetType());
 }
 
 MainWindow::~MainWindow()
@@ -748,24 +777,13 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QByteArray geom = saveGeometry();
     QByteArray enc = geom.toBase64(QByteArray::Base64Encoding);
     windowCfg.SetString("Geometry", enc.toStdString());
-
     Config::Save();
 
-    if (hasOGL && (windowID == 0))
-    {
-        // we intentionally don't unpause here
-        emuThread->emuPause();
-        emuThread->deinitContext();
-    }
+    emuInstance->deleteWindow(windowID, false);
 
-    emuThread->detachWindow(this);
-
-    if (windowID == 0)
-    {
-        int inst = emuInstance->instanceID;
-        deleteEmuInstance(inst);
-    }
-
+    // emuInstance may be deleted
+    // prevent use after free from us
+    emuInstance = nullptr;
     QMainWindow::closeEvent(event);
 }
 
@@ -956,7 +974,10 @@ void MainWindow::focusInEvent(QFocusEvent* event)
 
 void MainWindow::focusOutEvent(QFocusEvent* event)
 {
-    emuInstance->audioMute();
+    // focusOutEvent is called through the window close event handler
+    // prevent use after free
+    if (emuInstance)
+        emuInstance->audioMute();
 }
 
 void MainWindow::onAppStateChanged(Qt::ApplicationState state)
@@ -1677,6 +1698,67 @@ void MainWindow::onMPNewInstance()
     createEmuInstance();
 }
 
+void MainWindow::onLANStartHost()
+{
+    if (!lanWarning(true)) return;
+    LANStartHostDialog::openDlg(this);
+}
+
+void MainWindow::onLANStartClient()
+{
+    if (!lanWarning(false)) return;
+    LANStartClientDialog::openDlg(this);
+}
+
+void MainWindow::onNPStartHost()
+{
+    //Netplay::StartHost();
+    //NetplayStartHostDialog::openDlg(this);
+}
+
+void MainWindow::onNPStartClient()
+{
+    //Netplay::StartClient();
+    //NetplayStartClientDialog::openDlg(this);
+}
+
+void MainWindow::onNPTest()
+{
+    // HAX
+    //Netplay::StartGame();
+}
+
+void MainWindow::updateMPInterface(MPInterfaceType type)
+{
+    // MP interface was changed, reflect it in the UI
+
+    bool enable = (type == MPInterface_Local);
+    actMPNewInstance->setEnabled(enable);
+    actLANStartHost->setEnabled(enable);
+    actLANStartClient->setEnabled(enable);
+    /*actNPStartHost->setEnabled(enable);
+    actNPStartClient->setEnabled(enable);
+    actNPTest->setEnabled(enable);*/
+}
+
+bool MainWindow::lanWarning(bool host)
+{
+    if (numEmuInstances() < 2)
+        return true;
+
+    QString verb = host ? "host" : "join";
+    QString msg = "Multiple emulator instances are currently open.\n"
+            "If you "+verb+" a LAN game now, all secondary instances will be closed.\n\n"
+            "Do you wish to continue?";
+
+    auto res = QMessageBox::warning(this, "melonDS", msg, QMessageBox::Yes|QMessageBox::No, QMessageBox::No);
+    if (res == QMessageBox::No)
+        return false;
+
+    deleteAllEmuInstances(1);
+    return true;
+}
+
 void MainWindow::onOpenEmuSettings()
 {
     emuThread->emuPause();
@@ -1832,7 +1914,7 @@ void MainWindow::onMPSettingsFinished(int res)
 {
     emuInstance->mpAudioMode = globalCfg.GetInt("MP.AudioMode");
     emuInstance->audioMute();
-    LocalMP::SetRecvTimeout(globalCfg.GetInt("MP.RecvTimeout"));
+    MPInterface::Get().SetRecvTimeout(globalCfg.GetInt("MP.RecvTimeout"));
 
     emuThread->emuUnpause();
 }

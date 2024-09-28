@@ -91,6 +91,8 @@ public:
     std::string instanceFileSuffix();
 
     void createWindow();
+    void deleteWindow(int id, bool close);
+    void deleteAllWindows();
 
     void osdAddMessage(unsigned int color, const char* fmt, ...);
 
@@ -217,6 +219,8 @@ private:
     bool hotkeyPressed(int id)  { return hotkeyPress   & (1<<id); }
     bool hotkeyReleased(int id) { return hotkeyRelease & (1<<id); }
 
+    bool deleting;
+
     int instanceID;
 
     EmuThread* emuThread;
@@ -256,7 +260,7 @@ private:
     bool savestateLoaded;
     std::string previousSaveFile;
 
-    melonDS::ARCodeFile* cheatFile;
+    std::unique_ptr<melonDS::ARCodeFile> cheatFile;
     bool cheatsOn;
 
     SDL_AudioDeviceID audioDevice;

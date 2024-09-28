@@ -22,6 +22,7 @@
 #include <inttypes.h>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <regex>
 #include "toml/toml.hpp"
 
@@ -71,6 +72,7 @@ DefaultList<int> DefaultInts =
     {"Instance*.Gdb.ARM7.Port", 3334},
     {"Instance*.Gdb.ARM9.Port", 3333},
 #endif
+    {"LAN.HostNumPlayers", 16},
 };
 
 RangeList IntRanges =
@@ -89,6 +91,7 @@ RangeList IntRanges =
     {"Instance*.Window*.ScreenAspectTop", {0, AspectRatiosNum-1}},
     {"Instance*.Window*.ScreenAspectBot", {0, AspectRatiosNum-1}},
     {"MP.AudioMode", {0, 2}},
+    {"LAN.HostNumPlayers", {2, 16}},
 };
 
 DefaultList<bool> DefaultBools =
@@ -741,7 +744,7 @@ bool Load()
 
     try
     {
-        RootTable = toml::parse(cfgpath);
+        RootTable = toml::parse(std::filesystem::u8path(cfgpath));
     }
     catch (toml::syntax_error& err)
     {
@@ -758,7 +761,7 @@ void Save()
         return;
 
     std::ofstream file;
-    file.open(cfgpath, std::ofstream::out | std::ofstream::trunc);
+    file.open(std::filesystem::u8path(cfgpath), std::ofstream::out | std::ofstream::trunc);
     file << RootTable;
     file.close();
 }

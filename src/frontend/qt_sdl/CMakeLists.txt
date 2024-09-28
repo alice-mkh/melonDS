@@ -51,6 +51,9 @@ set(SOURCES_QT_SDL
 
     CLI.h
     CLI.cpp
+
+    LANDialog.cpp
+    NetplayDialog.cpp
 )
 
 if (APPLE)
@@ -60,10 +63,10 @@ else()
 endif()
 
 if (USE_QT6)
-    find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets REQUIRED)
+    find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
     set(QT_LINK_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Multimedia Qt6::OpenGL Qt6::OpenGLWidgets)
 else()
-    find_package(Qt5 COMPONENTS Core Gui Widgets Network Multimedia REQUIRED)
+    find_package(Qt5 COMPONENTS Core Gui Widgets Network Multimedia Svg REQUIRED)
     set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Multimedia)
 endif()
 
@@ -154,12 +157,21 @@ endif()
 
 if (BUILD_STATIC)
     qt_import_plugins(melonDS INCLUDE Qt::QSvgPlugin)
-    target_link_options(melonDS PRIVATE -static)
+    if (WIN32 AND USE_QT6)
+        qt_import_plugins(melonDS INCLUDE Qt::QModernWindowsStylePlugin)
+    endif()
+    if (USE_VCPKG AND UNIX AND NOT APPLE)
+        pkg_check_modules(ALSA REQUIRED IMPORTED_TARGET alsa)
+        target_link_libraries(melonDS PRIVATE PkgConfig::ALSA)
+    else()
+        target_link_options(melonDS PRIVATE -static)
+    endif()
 endif()
 
 target_include_directories(melonDS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(melonDS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(melonDS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+target_include_directories(melonDS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../net")
 if (USE_QT6)
     target_include_directories(melonDS PUBLIC ${Qt6Gui_PRIVATE_INCLUDE_DIRS})
 else()
@@ -236,6 +248,8 @@ if (UNIX AND NOT APPLE)
             INTERPROCEDURAL_OPTIMIZATION OFF
             INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
     endif()
+elseif(APPLE)
+    install(TARGETS melonDS BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications")
 endif()
 
 if (ENABLE_OGLRENDERER)
