@@ -19,6 +19,7 @@
 #define SAMPLE_RATE 32823.6328125
 #define MAX_SAMPLES 1500
 #define VOLUME_MULTIPLIER 1.5
+#define N_BAD_FRAMES 1
 
 #define USE_COMPUTE 0
 
@@ -37,6 +38,8 @@ struct _melonDSCore
   GLuint vertex_buffer;
   GLuint vertex_array;
   GLuint program;
+
+  int skip_frames;
 
   HsSoftwareContext *context;
 
@@ -352,6 +355,11 @@ melonds_core_start (HsCore *core)
   do {
     self->console->GPU.GetRenderer3D ().ShaderCompileStep (current_shader, shaders_count);
   } while (self->console->GPU.GetRenderer3D ().NeedsShaderCompile ());
+
+  if (self->gl_context) {
+    /* The first couple frames will be bad with GL rendering, skip them */
+    self->skip_frames = N_BAD_FRAMES;
+  }
 }
 
 static void
@@ -363,6 +371,11 @@ melonds_core_reset (HsCore *core)
 
   if (self->console->NeedsDirectBoot ())
     self->console->SetupDirectBoot ("");
+
+  if (self->gl_context) {
+    /* The first couple frames will be bad with GL rendering, skip them */
+    self->skip_frames = N_BAD_FRAMES;
+  }
 }
 
 static void
@@ -443,6 +456,11 @@ melonds_core_run_frame (HsCore *core)
   hs_core_play_samples (core, self->audio_buffer, n_samples * 2);
 
   if (self->gl_context) {
+    if (self->skip_frames > 0) {
+      self->skip_frames--;
+      return;
+    }
+
     gl_draw_frame (self);
     hs_gl_context_swap_buffers (self->gl_context);
     return;
@@ -503,6 +521,11 @@ melonds_core_load_state (HsCore          *core,
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load state");
     callback (core, &error);
     return;
+  }
+
+  if (self->gl_context) {
+    /* The first couple frames will be bad with GL rendering, skip them */
+    self->skip_frames = N_BAD_FRAMES;
   }
 
   delete state;
