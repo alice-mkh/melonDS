@@ -1,4 +1,4 @@
-#include "melonDS-highscore.h"
+#include "melonds-highscore.h"
 
 #include "FreeBIOS.h"
 #include "GPU.h"

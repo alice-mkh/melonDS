@@ -16,7 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
-#include "melonDS-highscore.h"
+#include "melonds-highscore.h"
 
 #include "Platform.h"
 
