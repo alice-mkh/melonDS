@@ -21,7 +21,7 @@
 #define VOLUME_MULTIPLIER 1.5
 #define N_BAD_FRAMES 1
 
-#define USE_COMPUTE 0
+#define USE_COMPUTE 1
 
 using namespace melonDS;
 
