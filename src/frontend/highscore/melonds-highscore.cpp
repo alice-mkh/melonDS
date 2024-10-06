@@ -300,7 +300,7 @@ melonds_core_load_rom (HsCore      *core,
 
     hs_core_log (core, HS_LOG_WARNING, "Failed to initialize GL context, falling back to software renderer");
 
-    self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_XRGB8888_REV);
+    self->context = hs_core_create_software_context (core, SCREEN_WIDTH, SCREEN_HEIGHT * 2, HS_PIXEL_FORMAT_B8G8R8X8);
 
     auto renderer = std::make_unique<SoftRenderer> ();
     self->console->GPU.SetRenderer3D (std::move (renderer));
