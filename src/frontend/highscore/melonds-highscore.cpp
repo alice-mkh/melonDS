@@ -237,10 +237,7 @@ try_migrate_desmume_save (const char *rom_path, const char *save_path, GError **
     return FALSE;
 
   // Success
-  g_autofree char *message = g_strdup_printf ("Migrated '%s' to '%s'",
-                                              g_file_peek_path (src_file),
-                                              g_file_peek_path (dst_file));
-  hs_core_log (HS_CORE (core), HS_LOG_MESSAGE, message);
+  hs_core_log (HS_CORE (core), HS_LOG_MESSAGE, "Migrated '%s' to '%s'", g_file_peek_path (src_file), g_file_peek_path (dst_file));
 
   return TRUE;
 }
@@ -626,7 +623,7 @@ melonds_nintendo_ds_core_init (HsNintendoDsCoreInterface *iface)
 void
 melonds_core_log (HsLogLevel level, const char *message)
 {
-  hs_core_log (core, level, message);
+  hs_core_log_literal (core, level, message);
 }
 
 const char *
